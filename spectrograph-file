@@ -1,0 +1,53 @@
+#!/bin/bash
+# Spectrograph  Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+
+path=$(dirname "`readlink -f "$0"`")
+
+if [[ "$*" = "-?" ]]; then
+	echo "spectrograph-file-specific command line args:"
+	echo
+	echo "  -?"
+	echo
+	echo "  --file <input-file-name>"
+	echo "       required"
+	echo
+	echo "  --rate <sample_rate>"
+	echo "       rate to be used for encoding"
+	echo "       default: file sampling rate"
+	echo
+	echo "The other command line args:"
+
+	$path/spectrograph -? | tail -n +2
+	exit 0
+fi
+
+
+exit_on_unknown_param=false
+exit_on_missing_param=true
+remove_wanted_param=true
+wanted_param=--file
+. $path/utils/catch-arg.sh
+file=$value
+
+exit_on_missing_param=false
+remove_wanted_param=false
+wanted_param=--rate
+. $path/utils/catch-arg.sh
+rate=$value
+
+if [[ ! -e $file ]]; then
+	echo "File not found"
+	exit 1
+fi
+
+if [[ -z $rate ]]; then
+	rate=`avconv -i "$file" 2>&1 | sed -nr 's/^.*Audio:.*\s+([0-9]+)\s*Hz.*$/\1/p'`
+	if [[ -z $rate ]]; then
+		echo "Rate cannot be determined, using default."
+		rate=44100
+	fi
+fi
+
+$path/utils/file2raw --file "$file" --rate "$rate" 2>/dev/null |
+$path/utils/play-forward-raw --rate "$rate" |
+$path/spectrograph --rate "$rate" "$@"

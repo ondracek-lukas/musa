@@ -1,0 +1,33 @@
+#!/bin/bash
+# Spectrograph  Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+
+path=$(dirname "`readlink -f "$0"`")
+
+if [[ "$*" = "-?" ]]; then
+	echo "spectrograph-mic-specific command line args:"
+	echo
+	echo "  -?"
+	echo
+	echo "  --rate <sample_rate>"
+	echo "       rate to be used for recording"
+	echo "       default: 44100"
+	echo
+	echo "The other command line args:"
+
+	$path/spectrograph -? | tail -n +2
+	exit 0
+fi
+
+exit_on_missing_param=false
+remove_wanted_param=false
+wanted_param=--rate
+. $path/utils/catch-arg.sh
+rate=$value
+
+if [[ -z $rate ]]; then
+	echo "Rate not given, using default."
+	rate=44100
+fi
+
+$path/utils/rec-raw --rate "$rate" 2>/dev/null |
+$path/spectrograph --rate "$rate" "$@"

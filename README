@@ -1,0 +1,59 @@
+
+################################################################################
+
+
+      The Spectrograph application performs Fast Fourier Transform
+      on audio input (from file or microphone) and
+      draws its spectrogram (in real time).
+
+      Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>
+
+      This program is free software: you can redistribute it and/or modify
+      it under the terms of the GNU General Public License version 3
+      as published by the Free Software Foundation.
+
+      This program is distributed in the hope that it will be useful,
+      but WITHOUT ANY WARRANTY; without even the implied warranty of
+      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+      GNU General Public License for more details.
+
+      You should have received a copy of the GNU General Public License
+      along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+################################################################################
+
+
+Dependencies:
+  OpenGL, Freeglut 3.0
+  PulseAudio, libav-tools
+
+
+The application itself expects a binary stream of floats of audio samples
+on standard input, therefore it is recommended to run the wrapper scripts
+spectrograph-mic (for real-time input audio processing)
+and spectrograph-file (for audio file processing).
+
+Simple usage:
+  spectrograph-file --file file.mp3
+  spectrograph-mic
+
+For more options run:
+  spectrograph -?
+  spectrograph-file -?
+  spectrograph-mic -?
+
+
+The interface (including options and wrappers) will change in later versions.
+
+
+See:
+  VERSION for current version of the application
+  COPYING for full text of GNU General Public Licence version 3
+
+Other information can be found on my web page
+  http://ondracek-lukas.hys.cz/projects .
+
+
+If you want to support the development of this application,
+you can send a donation to my PayPal account <ondracek.lukas@gmail.com>.

@@ -1,0 +1,20 @@
+#!/bin/bash
+# Spectrograph  Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+
+wanted_param="--rate"
+exit_on_unknown_param=false
+remove_wanted_param=true
+. "`dirname $0`/catch-arg.sh"
+rate=$value
+if (($value<=0)); then
+	echo "Wrong --rate argument." >&2
+	exit 1
+fi
+
+wanted_param="--file"
+exit_on_unknown_param=true
+remove_wanted_param=true
+. "`dirname $0`/catch-arg.sh"
+file="$value"
+
+avconv -ac 1 -acodec pcm_f32le -f f32le -ar $rate -i - "$file"

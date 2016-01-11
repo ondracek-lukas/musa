@@ -1,0 +1,14 @@
+#!/bin/bash
+# Spectrograph  Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+
+wanted_param="--rate"
+exit_on_unknown_param=true
+remove_wanted_param=true
+. "`dirname $0`/catch-arg.sh"
+rate=$value
+if (($value<=0)); then
+	echo "Wrong --rate argument." >&2
+	exit 1
+fi
+
+parec --format=float32ne --rate=$rate --channels=1 --latency=256
