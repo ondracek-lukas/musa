@@ -4,7 +4,7 @@
 path=$(dirname "`readlink -f "$0"`")
 
 if [[ "$*" = "-?" ]]; then
-	echo "spectrograph-mic-specific command line args:"
+	echo "musa-mic-specific command line args:"
 	echo
 	echo "  -?"
 	echo
@@ -14,7 +14,7 @@ if [[ "$*" = "-?" ]]; then
 	echo
 	echo "The other command line args:"
 
-	$path/spectrograph -? | tail -n +2
+	$path/musa -? | tail -n +2
 	exit 0
 fi
 
@@ -30,4 +30,4 @@ if [[ -z $rate ]]; then
 fi
 
 $path/utils/rec-raw --rate "$rate" 2>/dev/null |
-$path/spectrograph --rate "$rate" "$@"
+$path/musa --rate "$rate" "$@"

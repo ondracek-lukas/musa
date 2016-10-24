@@ -1,4 +1,4 @@
-// Spectrograph  Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+// MusA  Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
 #include <GL/freeglut.h>
 #include <GL/gl.h>
@@ -7,18 +7,12 @@
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
+
+#include "player.h"
 #include "drawer.h"
-#include "fft.h"
+//#include "fft.h"
 
 // #define BENCHMARKS_ALLOWED
-
-#ifdef BENCHMARKS_ALLOWED
-bool noGUI=false;
-bool noFFT=false;
-bool guiInfo=false;
-double outputRate;
-size_t inputLen=0;
-#endif
 
 bool exitOnEOF=false;
 
@@ -34,6 +28,7 @@ void exitApp() {
 	exit(0);
 }
 
+/*
 bool resized=false;
 void onResize(int w, int h){
 	width=w;
@@ -58,116 +53,52 @@ void onResize(int w, int h){
 	}
 	resized=true;
 }
+*/
 
 
-void onDisplay(){
-	if (!resized)
-		drawerRepaint(true);
-}
-
+/*
 void onTimer(int nothing) {
 	static bool eof=false;
-#ifdef BENCHMARKS_ALLOWED
-	static unsigned framesCnt=0;
-	if (!noGUI) {
-#endif
 		glutTimerFunc(FRAME_DELAY, onTimer, 0);
-#ifdef BENCHMARKS_ALLOWED
-	}
-#endif
 	if (eof) {
-#ifdef BENCHMARKS_ALLOWED
-		if (guiInfo) {
-			printf("%ux%u, %6.2f fps\n", width, height, (float)framesCnt*1000/glutGet(GLUT_ELAPSED_TIME));
-			guiInfo=false;
-		}
-#endif
 		if (exitOnEOF)
 			exitApp();
 	}
-#ifdef BENCHMARKS_ALLOWED
-	if (guiInfo)
-		framesCnt++;
-	if (noFFT) {
-		static size_t cntTotal=0;
-		size_t cnt,cntNew=(size_t)(glutGet(GLUT_ELAPSED_TIME)*outputRate/1000)-cntTotal;
-		if (inputLen && (cntNew+cntTotal>inputLen)) {
-			cntNew=inputLen-cntTotal;
-		}
-		while (cntNew) {
-			size_t firstNewBlock=(firstBlock+blocksCnt)%blocksAlloc;
-			cnt=cntNew;
-			if (cnt>blocksAlloc-firstNewBlock)
-				cnt=blocksAlloc-firstNewBlock;
-			cntNew-=cnt;
-			cntTotal+=cnt;
-
-			for (size_t i=0; i<cnt; i++)
-				for (size_t j=0; j<blockLen; j++)
-					buffer(firstNewBlock+i,j)=(float)random()/RAND_MAX;
-
-			if (!cnt)
-				break;
-			if (!noGUI)
-				drawerAddColumns(&buffer(firstNewBlock,0), cnt, 0);
-			blocksCnt+=cnt;
-			if (blocksCnt>blocksAlloc) {
-				firstBlock=(firstBlock+blocksCnt-blocksAlloc)%blocksAlloc;
-				blocksCnt=blocksAlloc;
-			}
-		}
-		if (inputLen && (cntTotal>=inputLen)) {
+	size_t cnt;
+	while (true) {
+		size_t firstNewBlock=(firstBlock+blocksCnt)%blocksAlloc;
+		cnt=fftGetData(&buffer(firstNewBlock,0), blocksAlloc-firstNewBlock);
+		if (fftEof()) {
 			eof=true;
 		}
-	} else {
-#endif
-		size_t cnt;
-		while (true) {
-			size_t firstNewBlock=(firstBlock+blocksCnt)%blocksAlloc;
-			cnt=fftGetData(&buffer(firstNewBlock,0), blocksAlloc-firstNewBlock);
-			if (fftEof()) {
-				eof=true;
-			}
-			if (!cnt)
-				break;
-#ifdef BENCHMARKS_ALLOWED
-			if (!noGUI) {
-#endif
-				drawerAddColumns(&buffer(firstNewBlock,0), cnt, 0);
-#ifdef BENCHMARKS_ALLOWED
-			}
-#endif
-			blocksCnt+=cnt;
-			if (blocksCnt>blocksAlloc) {
-				firstBlock=(firstBlock+blocksCnt-blocksAlloc)%blocksAlloc;
-				blocksCnt=blocksAlloc;
-			}
+		if (!cnt)
+			break;
+			drawerAddColumns(&buffer(firstNewBlock,0), cnt, 0);
+		blocksCnt+=cnt;
+		if (blocksCnt>blocksAlloc) {
+			firstBlock=(firstBlock+blocksCnt-blocksAlloc)%blocksAlloc;
+			blocksCnt=blocksAlloc;
 		}
-#ifdef BENCHMARKS_ALLOWED
 	}
-	if (!noGUI) {
-#endif
-		if (resized) {
-			resized=false;
-			glViewport(0,0,width,height);
-			glLoadIdentity();
-			glOrtho(0,width,0,height,-1,1);
-			drawerClearBuffer(width,height);
-			if (firstBlock+blocksCnt<=blocksAlloc) {
-				drawerAddColumns(&buffer(firstBlock,0), blocksCnt, 0);
-			} else {
-				drawerAddColumns(&buffer(firstBlock,0), blocksAlloc-firstBlock, 0);
-				drawerAddColumns(buffer, blocksCnt-(blocksAlloc-firstBlock), 0);
-			}
-			drawerRepaint(true);
+	if (resized) {
+		resized=false;
+		glViewport(0,0,width,height);
+		glLoadIdentity();
+		glOrtho(0,width,0,height,-1,1);
+		drawerClearBuffer(width,height);
+		if (firstBlock+blocksCnt<=blocksAlloc) {
+			drawerAddColumns(&buffer(firstBlock,0), blocksCnt, 0);
 		} else {
-			drawerRepaint(false);
+			drawerAddColumns(&buffer(firstBlock,0), blocksAlloc-firstBlock, 0);
+			drawerAddColumns(buffer, blocksCnt-(blocksAlloc-firstBlock), 0);
 		}
-#ifdef BENCHMARKS_ALLOWED
+		drawerRepaint(true);
+	} else {
+		drawerRepaint(false);
 	}
-#endif
 
 }
+*/
 
 
 
@@ -175,9 +106,7 @@ int main(int argc, char **argv){
 	double sampleRate=0;
 	double minFreq=0, maxFreq=0;
 	double anchoredFreq=440;
-#ifndef BENCHMARKS_ALLOWED
 	double outputRate;
-#endif
 	outputRate=250;
 
 	unsigned fftBlockLenLog2 = 0;
@@ -186,7 +115,6 @@ int main(int argc, char **argv){
 	unsigned fftOutputToIndex = 0;
 	unsigned drawToIndex=0;
 	unsigned fftThreads=0;
-	enum drawerScale scale=UNSCALED;
 	bool fftNormalizeAmplitudes=true;
 	bool toneScale=false;
 	bool hideScaleLines=false;
@@ -217,10 +145,8 @@ int main(int argc, char **argv){
 				"  -?\n"
 				"\n"
 				"  --rate <sample_rate>\n"
-				"       unscaled mode forced, when not present\n"
-				"       (unscaled ~ one fft amplitude per pixel)\n"
 				"\n"
-				"  --scale [linear|log] [hz|tones] [<frequency>]\n"
+				"  --scale [hz|tones] [<frequency>]\n"
 				"       frequency: to be anchored / of a1\n"
 				"       default: log hz 440\n"
 				"  --hide-scale-lines\n"
@@ -249,18 +175,6 @@ int main(int argc, char **argv){
 				"  --exit-on-eof\n"
 				"  --fft-threads <number>\n"
 				"\n"
-#ifdef BENCHMARKS_ALLOWED
-				" for benchmarking:\n"
-				"  --gui-info\n"
-				"       print average fps and current resolution on eof\n"
-				"  --no-fft <virtual_fft_output_length>\n"
-				"       use random data of expected properties instead\n"
-				"       virtual_fft_output_length: total image width in pixels\n"
-				"  --no-gui\n"
-				"       ignore results of fft\n"
-				"       to be used with --exit-on-eof\n"
-				"\n"
-#endif
 				"\n"
 				"The application responds only to resizing or closing the window\n"
 				"and to a new data on stdin.\n"
@@ -282,8 +196,6 @@ int main(int argc, char **argv){
 			exit(0);
 		} else ifarg("--rate") {
 			argdbl("--rate",sampleRate);
-			if (!scale)
-				scale=LOG_SCALE;
 		} else ifarg("--frequency-range") {
 			argdbl("--frequency-range",minFreq);
 			argdbl("--frequency-range",maxFreq);
@@ -317,12 +229,6 @@ int main(int argc, char **argv){
 			}
 		} else ifarg("--scale") {
 			if (i>=argc) break;
-			ifarg("log") {
-				scale=LOG_SCALE;
-			} else ifarg("linear") {
-				scale=LINEAR_SCALE;
-			}
-			if (i>=argc) break;
 			ifarg("hz") {
 				toneScale=false;
 			} else ifarg("tones") {
@@ -348,19 +254,6 @@ int main(int argc, char **argv){
 			coloredOvertones=true;
 		} else ifarg("--fft-threads") {
 			arguint("--fft-threads", fftThreads);
-#ifdef BENCHMARKS_ALLOWED
-		} else ifarg("--gui-info") {
-			guiInfo=true;
-		} else ifarg("--no-fft") {
-			noFFT=true;
-			if (i>=argc) break;
-			double value;
-			if (tryarg(value,"%lf")) {
-				inputLen=value;
-			}
-		} else ifarg("--no-gui") {
-			noGUI=true;
-#endif
 		} else {
 			printf("Unknown argument %s, use -? for help.\n", argv[i]);
 			exit(1);
@@ -450,23 +343,10 @@ int main(int argc, char **argv){
 			(double)sampleRate/fftShiftPerBlock, fftShiftPerBlock);
 
 		printf("Scale:                           ");
-		if (scale) {
-			switch(scale) {
-				case LOG_SCALE:
-					printf("logarithmic");
-					break;
-				case LINEAR_SCALE:
-					printf("linear");
-					break;
-				default: exit(2);
-			}
-			if (toneScale)
-				printf(" using tone labels, a1 frequency %.2lf\n", anchoredFreq);
-			else
-				printf(", anchored frequency %.2lf\n", anchoredFreq);
-		} else {
-			printf("none\n");
-		}
+		if (toneScale)
+			printf("tone labels, a1 frequency %.2lf\n", anchoredFreq);
+		else
+			printf("hz, anchored frequency %.2lf\n", anchoredFreq);
 
 		printf("Window length:                   %u samples (2^%u), displayed %d-%d\n",
 			1<<fftBlockLenLog2, fftBlockLenLog2, fftOutputFromIndex, drawToIndex);
@@ -486,48 +366,31 @@ int main(int argc, char **argv){
 	showKeyboard=showKeyboard && toneScale;
 	
 
-#ifdef BENCHMARKS_ALLOWED
-	if (!noFFT) {
-#endif
-		fftStart(stdin,
-			fftBlockLenLog2, fftShiftPerBlock,
-			fftOutputFromIndex, fftOutputToIndex,
-			fftNormalizeAmplitudes, fftThreads);
-#ifdef BENCHMARKS_ALLOWED
-	}
-#endif
+	/*
+	fftStart(stdin,
+		fftBlockLenLog2, fftShiftPerBlock,
+		fftOutputFromIndex, fftOutputToIndex,
+		fftNormalizeAmplitudes, fftThreads);
 
 	blockLen=fftOutputToIndex-fftOutputFromIndex+1;
 	blocksAlloc=16;
 	buffer=malloc(sizeof(float)*blockLen*blocksAlloc);
 
-#ifdef BENCHMARKS_ALLOWED
-	if (noGUI) {
-		while (true) {
-			onTimer(0);
-			usleep(FRAME_DELAY*1000);
-		}
-	} else {
-#endif
-		drawerSetInputColumnLen(blockLen,drawToIndex-fftOutputFromIndex+1);
-		if (sampleRate) {
-			drawerSetScale(scale, minFreq, maxFreq, anchoredFreq, toneScale, hideScaleLines, showKeyboard, coloredOvertones);
-		}
+	drawerSetInputColumnLen(blockLen,drawToIndex-fftOutputFromIndex+1);
+	*/
 
-		glutInit(&argc, argv);
-		glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE);
-		glutCreateWindow("Spectograph");
-		if (fullscreen)
-			glutFullScreen();
 
-		glutReshapeFunc(onResize);
-		glutDisplayFunc(onDisplay);
-		glutTimerFunc(FRAME_DELAY, onTimer, 0);
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE);
+	glutCreateWindow("Music analyser"); // XXX
 
-		glutMainLoop();
-#ifdef BENCHMARKS_ALLOWED
-	}
-#endif
+	playerUseFDQuiet(stdin, sampleRate);
+	drawerInit(100, 1, minFreq, maxFreq, anchoredFreq, toneScale, hideScaleLines, showKeyboard, coloredOvertones); // XXX
+
+	if (fullscreen)
+		glutFullScreen();
+
+	glutMainLoop();
 	return 0;
 }
 

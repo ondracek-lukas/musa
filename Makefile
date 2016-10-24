@@ -1,11 +1,11 @@
 CFLAGS=-pthread -m64 -std=gnu99
 LDFLAGS=-lGL -lglut -lm
 
-spectrograph: obj/main.o obj/drawer.o obj/fft.o
+musa: obj/main.o obj/drawer.o obj/player.o obj/drawerBuffer.o obj/drawerMusicVisualiser.o obj/drawerScale.o
 	gcc -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
-run: spectrograph
-	./spectrograph
+run: musa
+	./musa
 
 obj/%.o: src/%.c
 	mkdir obj -p
@@ -13,7 +13,11 @@ obj/%.o: src/%.c
 
 obj/main.o: src/drawer.h src/fft.h
 obj/fft.o: src/fft.h
-obj/drawer.o: src/drawer.h
+obj/player.o: src/player.h
+obj/drawer.o: src/drawer*.h src/player.h
+obj/drawerBuffer.o: src/drawerBuffer.h
+obj/drawerScale.o: src/drawerScale.h
+obj/drawerMusicVisualiser.o: src/drawerMusicVisualiser.h src/drawerBuffer.h
 
 clean:
-	rm -rf obj spectrograph
+	rm -rf obj musa

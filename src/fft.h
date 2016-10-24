@@ -1,5 +1,6 @@
-// Spectrograph  Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+// MusA  Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
-extern void fftStart(FILE *source, size_t blockLenPow2, size_t shiftPerBlock, size_t outputFromIndex, size_t outputToIndex, bool normalizeAmplitudes, unsigned fftThreads);
-extern size_t fftGetData(float *ptr, size_t maxBlocksCnt);
-extern bool fftEof();
+extern void fftInit(unsigned threads);
+extern void fftRestart(size_t blockLenPow2, void (*oneTimeCallback)(), char *(*dataExchangeCallback)(void **info));
+extern void fftResume();
+//extern void fftDestroy();

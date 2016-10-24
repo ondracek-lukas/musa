@@ -1,4 +1,4 @@
-// Spectrograph  Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+// MusA  Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
 #include<stdlib.h>
 #include<stdbool.h>
@@ -8,6 +8,10 @@
 #include<GL/freeglut.h>
 #include<GL/gl.h>
 
+#include "player.h"
+#include "drawerBuffer.h"
+#include "drawerMusicVisualiser.h"
+#include "drawerScale.h"
 #include "drawer.h"
 
 static size_t width, height, rowSize;
@@ -16,17 +20,12 @@ static size_t newColumns=0;
 static size_t inputColumnLen=1;
 static size_t inputColumnLenToDraw=1;
 
-static enum drawerScale scale=UNSCALED;
-static double scaleMinFreq, scaleMaxFreq, scaleAnchoredFreq;
-bool scaleTones=false;
 bool drawScaleLines=true;
 bool drawKeyboard=false;
 bool colorOvertones=false;
 float keyboardMinFreq;
 unsigned keyboardMinTone;
-
-static unsigned char *buffer=0;
-#define buffer(x,y,channel) buffer[rowSize*(y)+3*(((x)+rowBegin)%width)+channel]
+double centeredRatio;
 
 #define SCALE_LINES_ALPHA_MAIN 0.5
 #define SCALE_LINES_ALPHA_OTHER 0.3
@@ -38,310 +37,33 @@ static unsigned char *buffer=0;
 
 static unsigned char colorScale[1024*3]={255};
 
+static void onTimer();
+static void onReshape(int w, int h);
+static void onDisplay();
 
-struct scaleLabels {
-	size_t pos;
-	bool main;
-	char label[32];
-} *scaleLabels=NULL;
-size_t scaleLabelsCnt=0;
-
-
-static double scaleFreqToPosMultiplier;
-static inline double scaleFreqToPos(double freq) {
-	switch (scale) {
-		case LOG_SCALE:
-			// scaleFreqToPosMultiplier=(double)height/log(scaleMaxFreq/scaleMinFreq);
-			return log(freq/scaleMinFreq)*scaleFreqToPosMultiplier;
-		case LINEAR_SCALE:
-			// scaleFreqToPosMultiplier=(double)height/(scaleMaxFreq-scaleMinFreq);
-			return (freq-scaleMinFreq)*scaleFreqToPosMultiplier;
-		default:
-			return 0;
-	}
-}
-static double scalePosToInputIndexMultiplier;
-static double *scalePosToInputIndexCache=0;
-#define scalePosToInputIndex(pos) scalePosToInputIndexCache[pos]
-static inline double scalePosToInputIndexUncached(double pos) {
-	switch (scale) {
-		case LOG_SCALE:
-			// scalePosToInputIndexMultiplier=scaleMinFreq/(scaleMaxFreq-scaleMinFreq)*(inputColumnLenToDraw-1);
-			return (pow(scaleMaxFreq/scaleMinFreq,pos/height)-1)*scalePosToInputIndexMultiplier;
-		case LINEAR_SCALE:
-			// scalePosToInputIndexMultiplier=(double)(inputColumnLenToDraw-1)/height;
-			return pos*scalePosToInputIndexMultiplier;
-		default:
-			return 0;
-	}
-}
-
-static inline double scaleFreqToInputIndex(double freq) {
-	return (freq-scaleMinFreq)/(scaleMaxFreq-scaleMinFreq)*(inputColumnLenToDraw-1);
-}
-static inline double scaleInputIndexToFreq(double index) {
-	return index/(inputColumnLenToDraw-1)*(scaleMaxFreq-scaleMinFreq)+scaleMinFreq;
-}
-
-static void getToneName(char *name, int a1offset) {
-	int octave, tone=a1offset+21; // c offset
-	char *toneName;
-	if (tone>=0) {
-		octave=tone/12;
-		tone%=12;
-		toneName=(char *[]){"c","cis","d","dis","e","f","fis","g","gis","a","ais","h"}[tone];
-		if (octave>0)
-			sprintf(name, "%s%d", toneName, octave);
-		else
-			sprintf(name, "%s", toneName);
-	} else {
-		octave=(-tone-1)/12;
-		tone=((tone%12)+12)%12;
-		toneName=(char *[]){"C","Cis","D","Dis","E","F","Fis","G","Gis","A","Ais","H"}[tone];
-		if (octave>0)
-			sprintf(name, "%s%d", toneName, octave);
-		else
-			sprintf(name, "%s", toneName);
-	}
-}
-
-static void calcScaleLabels() {
-	if (!height)
-		return;
-
-	// initialize scale
-	switch (scale) {
-		case LOG_SCALE:
-			scaleFreqToPosMultiplier=(double)height/log(scaleMaxFreq/scaleMinFreq);
-			scalePosToInputIndexMultiplier=scaleMinFreq/(scaleMaxFreq-scaleMinFreq)*(inputColumnLenToDraw-1);
-			break;
-		case LINEAR_SCALE:
-			scaleFreqToPosMultiplier=(double)height/(scaleMaxFreq-scaleMinFreq);
-			scalePosToInputIndexMultiplier=(double)(inputColumnLenToDraw-1)/height;
-			break;
-		default:
-			break;
-	}
-	free(scalePosToInputIndexCache);
-	scalePosToInputIndexCache=malloc(sizeof(double)*height);
-	for (size_t i=0; i<height; i++)
-		scalePosToInputIndexCache[i]=scalePosToInputIndexUncached(i);
-
-	float multiplier, difference, freq;
-	double freq1Pos;
-	freq=scaleAnchoredFreq;
-	if (scale && scaleTones) {
-		multiplier=pow(2,1.0/12);
-		int tone=0, lastLabeledPos=-SCALE_LABELS_FONT_HEIGHT;
-		for (; freq>=scaleMinFreq; freq/=multiplier, tone--);
-		for (; freq<scaleMinFreq; freq*=multiplier, tone++);
-		keyboardMinFreq=freq/pow(2,1.0/24);
-		keyboardMinTone=((tone-4)%12+12)%12;
-		free(scaleLabels);
-		scaleLabelsCnt=(size_t)ceil(log(scaleMaxFreq/freq)/log(multiplier));
-		scaleLabels=malloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
-		for (size_t i=0; i<scaleLabelsCnt; freq*=multiplier, i++, tone++) {
-			scaleLabels[i].pos=(size_t)(scaleFreqToPos(freq)+0.5);
-			if ((height-scaleLabels[i].pos>SCALE_LABELS_FONT_HEIGHT) &&
-			    (scaleLabels[i].pos-lastLabeledPos>SCALE_LABELS_FONT_HEIGHT)) {
-				getToneName(scaleLabels[i].label, tone);
-				scaleLabels[i].main=true;
-				lastLabeledPos=scaleLabels[i].pos;
-			} else {
-				scaleLabels[i].label[0]='\0';
-				scaleLabels[i].main=false;
-			}
-		}
-	} else {
-		switch (scale) {
-			case LOG_SCALE:
-				multiplier=2;
-				freq1Pos=scaleFreqToPos(1);
-				for (; scaleFreqToPos(multiplier)-freq1Pos>=MIN_SCALE_LABELS_DIST; multiplier=sqrt(multiplier));
-				for (; scaleFreqToPos(multiplier)-freq1Pos<MIN_SCALE_LABELS_DIST; multiplier=pow(multiplier,2));
-				for (; freq>=scaleMinFreq; freq/=multiplier);
-				for (; freq<scaleMinFreq; freq*=multiplier);
-				free(scaleLabels);
-				scaleLabelsCnt=(size_t)ceil(log(scaleMaxFreq/freq)/log(multiplier));
-				scaleLabels=malloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
-				for (size_t i=0; i<scaleLabelsCnt; freq*=multiplier, i++) {
-					scaleLabels[i].pos=(size_t)(scaleFreqToPos(freq)+0.5);
-					if (height-scaleLabels[i].pos>SCALE_LABELS_FONT_HEIGHT)
-						sprintf(scaleLabels[i].label,"%0.2f Hz", freq);
-					else
-						scaleLabels[i].label[0]='\0';
-					scaleLabels[i].main=true;
-				}
-				break;
-			case LINEAR_SCALE:
-				difference=10;
-				freq1Pos=scaleFreqToPos(0);
-				for (; scaleFreqToPos(difference)-freq1Pos>=MIN_SCALE_LABELS_DIST; difference/=2);
-				for (; scaleFreqToPos(difference)-freq1Pos<MIN_SCALE_LABELS_DIST; difference*=2);
-				for (; freq>=scaleMinFreq; freq-=difference);
-				for (; freq<scaleMinFreq; freq+=difference);
-				free(scaleLabels);
-				scaleLabelsCnt=(size_t)ceil((scaleMaxFreq-freq)/difference);
-				scaleLabels=malloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
-				for (size_t i=0; i<scaleLabelsCnt; freq+=difference, i++) {
-					scaleLabels[i].pos=(size_t)(scaleFreqToPos(freq)+0.5);
-					if (height-scaleLabels[i].pos>SCALE_LABELS_FONT_HEIGHT)
-						sprintf(scaleLabels[i].label,"%0.2f Hz", freq);
-					else
-						scaleLabels[i].label[0]='\0';
-					scaleLabels[i].main=true;
-				}
-				break;
-			default:
-				free(scaleLabels);
-				scaleLabels=NULL;
-				scaleLabelsCnt=0;
-				break;
-		}
-	}
-}
-
-void drawerSetScale(enum drawerScale s, double minFrequency, double maxFrequency, double anchoredFrequency,
+void drawerInit(
+	double columnsPerSecond, double centeredColumnRatio,
+	double minFrequency, double maxFrequency, double anchoredFrequency,
 	bool tones, bool hideScaleLines, bool showKeyboard, bool coloredOvertones) {
-	scale=s;
-	scaleMinFreq=minFrequency;
-	scaleMaxFreq=maxFrequency;
-	scaleAnchoredFreq=anchoredFrequency;
-	scaleTones=tones;
+	dbufferColumnsPerSecond = columnsPerSecond;
+	dsColumnToPlayerPosMultiplier = playerFreqRate/columnsPerSecond;
+	centeredRatio = centeredColumnRatio;
+	dsMinFreq=minFrequency;
+	dsMaxFreq=maxFrequency;
+	dsAnchoredFreq=anchoredFrequency;
+	dsTones=tones;
 	drawScaleLines=!hideScaleLines;
 	drawKeyboard=showKeyboard;
 	colorOvertones=coloredOvertones;
-	if (scale)
-		calcScaleLabels();
-	else
-		scale=UNSCALED;
-}
+	//calcScaleLabels();
 
-void drawerSetInputColumnLen(size_t value, size_t toBeDrawen) {
-	inputColumnLen=value;
-	inputColumnLenToDraw=toBeDrawen;
-}
-
-void drawerAddColumns(float *buff, size_t columns, size_t drawingOffset) { // column-oriented
-	if (!buffer)
-		return;
-	for (size_t x=0; x<columns; x++) {
-		float avg=0;
-		bool keyboardWhite;
-		double keyboardFreq=keyboardMinFreq;
-		unsigned keyboardTone=keyboardMinTone;
-		for (size_t i=0; i<inputColumnLen; i++)
-			avg+=buff[x*inputColumnLen+i];
-		avg/=inputColumnLen;
-		for (size_t y=0; y<height; y++) {
-			float value;
-			double freq;
-			if (scale) {
-				double dblIndex=scalePosToInputIndex(y);
-				double ratio=dblIndex;
-				freq=scaleInputIndexToFreq(dblIndex);
-				size_t index=(int)ratio;
-				ratio-=index;
-				value=buff[x*inputColumnLen+index]*(1-ratio) + buff[x*inputColumnLen+index+1]*ratio; // ?
-			} else {
-				value=buff[x*inputColumnLen+y];
-			}
-			if (scale && colorOvertones) {
-				float odd=1, even=1, none=1, coef;
-				unsigned tmp;
-				if (scaleFreqToInputIndex(freq*2)<=inputColumnLen)
-					odd+= (buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*2))]-avg)/value*4;
-				if (scaleFreqToInputIndex(freq*3)<=inputColumnLen)
-					even+=(buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*3))]-avg)/value*4;
-				if (scaleFreqToInputIndex(freq*4)<=inputColumnLen)
-					odd+= (buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*4))]-avg)/value*2;
-				if (scaleFreqToInputIndex(freq*5)<=inputColumnLen)
-					even+=(buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*5))]-avg)/value*2;
-				if (scaleFreqToInputIndex(freq*6)<=inputColumnLen)
-					odd+= (buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*6))]-avg)/value;
-				if (scaleFreqToInputIndex(freq*7)<=inputColumnLen)
-					even+=(buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*7))]-avg)/value;
-				if (odd<1) odd=1;
-				if (even<1) even=1;
-				coef=1/(odd+even+1)*256*3;
-
-				if ((tmp=value*even*coef)<=255)
-					buffer(x+drawingOffset,y,0)=tmp;
-				else
-					buffer(x+drawingOffset,y,0)=255;
-				if ((tmp=value*none*coef)<=255)
-					buffer(x+drawingOffset,y,1)=tmp;
-				else
-					buffer(x+drawingOffset,y,1)=255;
-				if ((tmp=value*odd*coef)<=255)
-					buffer(x+drawingOffset,y,2)=tmp;
-				else
-					buffer(x+drawingOffset,y,2)=255;
-
-			} else {
-				unsigned valueI=value*1024;
-				if (valueI>=1024)
-					valueI=1023;
-				valueI*=3;
-				buffer(x+drawingOffset,y,0)=colorScale[valueI];
-				buffer(x+drawingOffset,y,1)=colorScale[valueI+1];
-				buffer(x+drawingOffset,y,2)=colorScale[valueI+2];
-			}
-			if (drawKeyboard) {
-				if (keyboardFreq>freq) {
-					buffer(x+drawingOffset,y,0)=(1-KEYBOARD_ALPHA)*buffer(x+drawingOffset,y,0)+KEYBOARD_ALPHA*(keyboardWhite*128+!keyboardTone*127);
-					buffer(x+drawingOffset,y,1)=(1-KEYBOARD_ALPHA)*buffer(x+drawingOffset,y,1)+KEYBOARD_ALPHA*(keyboardWhite*128+!keyboardTone*127);
-					buffer(x+drawingOffset,y,2)=(1-KEYBOARD_ALPHA)*buffer(x+drawingOffset,y,2)+KEYBOARD_ALPHA*(keyboardWhite*128+!keyboardTone*127);
-				} else {
-					while (keyboardFreq<=freq) {
-						keyboardFreq*=pow(2,1.0/12);
-						keyboardTone=(keyboardTone+1)%12;
-					}
-					switch (keyboardTone) {
-						case 1:
-						case 3:
-						case 6:
-						case 8:
-						case 10:
-							keyboardWhite=false;
-							break;
-						default:
-							keyboardWhite=true;
-							break;
-					}
-				}
-			}
-		}
-		if (drawScaleLines) {
-			for (size_t i=0; i<scaleLabelsCnt; i++) {
-				size_t y=scaleLabels[i].pos;
-				float alpha=
-					scaleLabels[i].main*SCALE_LINES_ALPHA_MAIN+
-					(1-scaleLabels[i].main)*SCALE_LINES_ALPHA_OTHER;
-				buffer(x+drawingOffset,y,0)=(1-alpha)*buffer(x+drawingOffset,y,0);
-				buffer(x+drawingOffset,y,1)=(1-alpha)*buffer(x+drawingOffset,y,1)+alpha*255;
-				buffer(x+drawingOffset,y,2)=(1-alpha)*buffer(x+drawingOffset,y,2);
-			}
-		}
-	}
-	rowBegin=(rowBegin+columns+drawingOffset+width) % width;
-	newColumns+=columns;
-}
-void drawerClearBuffer(size_t w, size_t h){
-	width=w;
-	height=h;
-	rowBegin=0;
-	rowSize=(3*width+3)/4*4;
-	free(buffer);
-	buffer=calloc(height*rowSize,1);
-	calcScaleLabels();
-	glReadBuffer(GL_BACK);
-	//glReadBuffer(GL_FRONT);
-	glDrawBuffer(GL_BACK);
-	glPixelStoref(GL_UNPACK_ROW_LENGTH,width);
-	//newColumns=width; // ?
-	glClear(GL_COLOR_BUFFER_BIT);
-	if (!(scale && colorOvertones) && (colorScale[0]==255)) { // initialize colorScale cache
+	dbuffer.columnLen=0;
+	dbuffer.begin=-DRAWER_BUFFER_SIZE;
+	dbuffer.end=0;
+	dbuffer.dataInvalid=true;
+	dbufferMove(DRAWER_BUFFER_SIZE/2);
+	
+	if (!colorOvertones) { // initialize colorScale cache
 		size_t i=0;
 		for (; i<64; i++) {
 			colorScale[3*i]  =0;
@@ -364,10 +86,73 @@ void drawerClearBuffer(size_t w, size_t h){
 			colorScale[3*i+2]=0;
 		}
 	}
+
+	glutReshapeFunc(onReshape);
+	glutDisplayFunc(onDisplay);
+	glutTimerFunc(DRAWER_FRAME_DELAY, onTimer, 0);
 }
 
 
-void drawerRepaint(bool force) {
+// --- DRAWING ---
+
+int drawerBufferPos=0;
+int screenCenterColumn=0;
+
+static inline void drawColumn(int screenColumn) {
+	int column = screenColumn - screenCenterColumn + drawerBufferPos;
+	if (dbufferExists(column)) {
+		if (dbufferState(column) == DBUFF_PROCESSED) {
+			glRasterPos2i(screenColumn,0);
+			glDrawPixels(1, height, GL_RGB, GL_UNSIGNED_BYTE, &dbuffer(column, 0, 0));
+			return;
+		} else {
+			if (!dbufferPreviewCreated(column)) {
+				dmvCreatePreview(column);
+			}
+			if (dbufferPreviewCreated(column)) {
+				glColor3bv(&dbufferPreview(column, 0));
+			} else {
+				glColor3f(1,0,0);
+			}
+		}
+	} else {
+		glColor3f(0,1,1);
+	}
+	glLineWidth(1);
+	glBegin(GL_LINES);
+	glVertex2i(screenColumn, 0);
+	glVertex2i(screenColumn, height-1);
+	glEnd();
+}
+static inline void moveColumnsAndUpdate(int fromScreenColumn, int toScreenColumn, int offset) {
+	glCopyPixels(fromScreenColumn, 0, toScreenColumn, height, GL_COLOR);
+	for (
+		int i = fromScreenColumn + offset - screenCenterColumn + drawerBufferPos;
+		i < toScreenColumn + offset - screenCenterColumn + drawerBufferPos;
+		i++) {
+		if (dbufferExists(i) && (dbufferState(i) < DBUFF_DRAWED)) {
+			if ((dbufferState(i) == DBUFF_PROCESSED) || (!dbufferPreviewCreated(i))) {
+				drawColumn(i + screenCenterColumn - drawerBufferPos);
+			}
+		}
+	}
+}
+
+// Draws the view, possibly moving some area (if not forced)
+static void repaint(bool force) {
+	int oldBufferPos=drawerBufferPos;
+	drawerBufferPos=dsPlayerPosToColumn(playerPos);
+	int offset=drawerBufferPos-oldBufferPos;
+	if (!force && (offset>=0) && (offset<width)) {
+		moveColumnsAndUpdate(offset, width, -offset);
+		for (int i=width-offset; i<width; i++) drawColumn(i);
+	} else if (!force && (offset<0) && (-offset<width)) {
+		moveColumnsAndUpdate(0, width-offset, offset);
+		for (int i=0; i<offset; i++) drawColumn(i);
+	} else {
+		for (int i=0; i<width; i++) drawColumn(i);
+	}
+	/*
 	static int leftForcedColumns=0;
 	if (!force && !newColumns)
 		return;
@@ -424,9 +209,41 @@ void drawerRepaint(bool force) {
 			leftForcedColumns=rasterPos[0];
 		}
 	}
-
+	*/
 
 	glFlush();
 	glutSwapBuffers();
-	newColumns=0;
+}
+
+// --- EVENTS ---
+
+static void onTimer() {
+	__sync_synchronize();
+	int newPos=dsPlayerPosToColumn(playerPos);
+	if (drawerBufferPos != newPos) {
+		//glutPostRedisplay();
+		dbufferMove(newPos-drawerBufferPos);
+		repaint(false);
+	}
+	glutTimerFunc(DRAWER_FRAME_DELAY, onTimer, 0);
+}
+
+static void onReshape(int w, int h) {
+	width=w;
+	height=h;
+	screenCenterColumn=w*centeredRatio;
+	glViewport(0, 0, w, h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0, w, 0, h, -1, 1);
+	//dbufferRealloc(h); // XXX
+
+	glReadBuffer(GL_BACK);
+	glDrawBuffer(GL_BACK);
+	//glPixelStoref(GL_UNPACK_ROW_LENGTH,width);
+	//glClear(GL_COLOR_BUFFER_BIT);
+}
+
+static void onDisplay() {
+	repaint(true);
 }

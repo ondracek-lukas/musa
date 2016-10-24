@@ -4,7 +4,7 @@
 path=$(dirname "`readlink -f "$0"`")
 
 if [[ "$*" = "-?" ]]; then
-	echo "spectrograph-file-specific command line args:"
+	echo "musa-file-specific command line args:"
 	echo
 	echo "  -?"
 	echo
@@ -17,7 +17,7 @@ if [[ "$*" = "-?" ]]; then
 	echo
 	echo "The other command line args:"
 
-	$path/spectrograph -? | tail -n +2
+	$path/musa -? | tail -n +2
 	exit 0
 fi
 
@@ -50,4 +50,4 @@ fi
 
 $path/utils/file2raw --file "$file" --rate "$rate" 2>/dev/null |
 $path/utils/play-forward-raw --rate "$rate" |
-$path/spectrograph --rate "$rate" "$@"
+$path/musa --rate "$rate" "$@"
