@@ -14,9 +14,9 @@ struct {
 	float data[PLAYER_BUFFER_SIZE];  // indexes are positions in stream mod PLAYER_BUFFER_SIZE
 } playerBuffer;
 
-#define playerPosToIndex(pos) (((pos)+PLAYER_BLOCK_SIZE)%PLAYER_BLOCK_SIZE)
+#define playerPosToIndex(pos) (((pos)+PLAYER_BUFFER_SIZE)%PLAYER_BUFFER_SIZE)
 #define playerBuffer(pos) playerBuffer.data[playerPosToIndex(pos)]
-#define playerBufferWrapBetween(pos1, pos2) ((pos1)/PLAYER_BLOCK_SIZE != (pos2-1)/PLAYER_BLOCK_SIZE)
+#define playerBufferWrapBetween(pos1, pos2) (((pos1)+PLAYER_BUFFER_SIZE)/PLAYER_BUFFER_SIZE != ((pos2)+PLAYER_BUFFER_SIZE-1)/PLAYER_BUFFER_SIZE)
 
 int playerPos;      // current position in the stream
 bool playerRunning;  // end of stream has been reached

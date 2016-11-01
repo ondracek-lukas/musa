@@ -1,7 +1,7 @@
-CFLAGS=-pthread -m64 -std=gnu99
+CFLAGS=-pthread -m64 -std=gnu99 -g
 LDFLAGS=-lGL -lglut -lm
 
-musa: obj/main.o obj/drawer.o obj/player.o obj/drawerBuffer.o obj/drawerMusicVisualiser.o obj/drawerScale.o
+musa: obj/main.o obj/drawer.o obj/player.o obj/drawerBuffer.o obj/drawerMusicVisualiser.o obj/drawerScale.o obj/logFft.o obj/fft.o
 	gcc -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
 run: musa

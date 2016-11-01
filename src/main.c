@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-#include <unistd.h>
 
 #include "player.h"
 #include "drawer.h"
@@ -102,7 +101,7 @@ void onTimer(int nothing) {
 
 
 
-int main(int argc, char **argv){
+int main(int argc, char **argv){ // XXX most of the options are ignored and should be changed/removed
 	double sampleRate=0;
 	double minFreq=0, maxFreq=0;
 	double anchoredFreq=440;
@@ -322,9 +321,7 @@ int main(int argc, char **argv){
 	minFreq=(double)sampleRate*fftOutputFromIndex/(1<<fftBlockLenLog2);
 	maxFreq=(double)sampleRate*drawToIndex/(1<<fftBlockLenLog2);
 
-	if (!fftThreads)
-		fftThreads=sysconf(_SC_NPROCESSORS_ONLN);
-
+	/*
 	// print settings
 	if (!quiet) {
 		printf("Assumed sampling rate:           ");
@@ -364,7 +361,7 @@ int main(int argc, char **argv){
 	else
 		fftOutputToIndex=drawToIndex;
 	showKeyboard=showKeyboard && toneScale;
-	
+	*/
 
 	/*
 	fftStart(stdin,
@@ -382,7 +379,7 @@ int main(int argc, char **argv){
 
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE);
-	glutCreateWindow("Music analyser"); // XXX
+	glutCreateWindow("MusA (musical analyser)");
 
 	playerUseFDQuiet(stdin, sampleRate);
 	drawerInit(100, 1, minFreq, maxFreq, anchoredFreq, toneScale, hideScaleLines, showKeyboard, coloredOvertones); // XXX

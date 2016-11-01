@@ -1,5 +1,6 @@
 // MusA  Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
+#include <unistd.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -12,15 +13,15 @@
 
 #define SRC_BLOCK_LEN 256
 
-static size_t fftBlockLen = 0, fftBlockLenLog2;
-static char *(*exchangeCallback)(void **info) = NULL;
+static size_t blockLen = 0, blockLenLog2;
+static float *(*exchangeCallback)(void **info, bool restarted) = NULL;
 static void (*restartCallback)() = NULL;
 
-#define fftWindowGenHamming(x,k) ((k)-(1-(k))*cos(2*M_PI*(x)/fftBlockLen)) // Generalized Hamming window
+#define fftWindowGenHamming(x,k) ((k)-(1-(k))*cos(2*M_PI*(x)/blockLen)) // Generalized Hamming window
 #define fftWindowHann(x)         fftWindowGenHamming((x),0.5)              // Hann window
 #define fftWindowHamming(x)      fftWindowGenHamming((x),0.54)             // Hamming window
 #define fftWindowRect(x)         1                                         // Rectangular window
-#define fftWindowTrgl(x)         ((float)((x)>fftBlockLen/2?fftBlockLen-(x):(x))*2/fftBlockLen) // Triangular window
+#define fftWindowTrgl(x)         ((float)((x)>blockLen/2?blockLen-(x):(x))*2/blockLen) // Triangular window
 
 #define fftWindow fftWindowHann
 static struct cache {
@@ -41,7 +42,7 @@ static struct workerInfo {
 
 static void *fftWorker(void *null);
 
-static unsigned runningCnt=0;
+// static unsigned runningCnt=0;
 static unsigned waitingCnt=0;
 
 static inline size_t reverseLowerBits(size_t value, size_t cnt) {
@@ -54,20 +55,23 @@ static inline size_t reverseLowerBits(size_t value, size_t cnt) {
 
 static void cacheOmegaInit() {
 	free(cache);
-	cache=malloc(sizeof(struct cache)*fftBlockLen);
-	for (size_t i=0; i<fftBlockLen; i++) {
-		size_t j=reverseLowerBits(i,fftBlockLenLog2);
+	cache=malloc(sizeof(struct cache)*blockLen);
+	for (size_t i=0; i<blockLen; i++) {
+		size_t j=reverseLowerBits(i,blockLenLog2);
 		cache[i].reversedIndex=j;
 		cache[i].windowValue=fftWindow(j);
 	}
 	free(omega);
-	omega=malloc(sizeof(float complex)*fftBlockLenLog2);
-	for (size_t i=0, k=1; i<fftBlockLenLog2; i++, k*=2)
+	omega=malloc(sizeof(float complex)*blockLenLog2);
+	for (size_t i=0, k=1; i<blockLenLog2; i++, k*=2)
 		omega[i]=cexpf(I*M_PI/k);
 }
 
-extern void fftInit(unsigned threads) {
-	workersCnt=threads;
+static bool stopInvoked = true;
+static char startCnt = 0;
+
+extern void fftInit() {
+	workersCnt=sysconf(_SC_NPROCESSORS_ONLN);
 	workers=malloc(sizeof(struct workerInfo)*workersCnt);
 	for (size_t i=0; i<workersCnt; i++) {
 		workers[i].id=i;
@@ -76,79 +80,70 @@ extern void fftInit(unsigned threads) {
 	}
 }
 
-static bool restartInvoked = false;
-static size_t newBlockLenLog2;
-static char *(*newExchangeCallback)(void **info);
-extern void fftRestart(size_t blockLenLog2, void (*oneTimeCallback)(), char *(*dataExchangeCallback)(void **info)) {
-	pthread_mutex_lock(&mutex);
-	restartInvoked = true;
-	if (sleepingCnt >= runningCnt) {
-		pthread_cond_signal(&cond);
-	}
-	newBlockLenLog2 = blockLenLog2;
-	restartCallback = oneTimeCallback;
-	newExchangeCallback = dataExchangeCallback;
-	pthread_mutex_unlock(&mutex);
+extern void fftStop() {
+	stopInvoked = true;
 }
-static void onRestart() {  // to be called with mutex locked in the only non-waiting thread
-	fftBlockLenLog2 = blockLenLog2;
-	fftBlockLen = 1<<blockLenLog2;
+extern void fftStart(
+		size_t newBlockLenLog2,
+		float *(*newExchangeCallback)(void **info, bool restarted)) {
+	blockLenLog2 = newBlockLenLog2;
+	blockLen = 1<<blockLenLog2;
 	exchangeCallback = newExchangeCallback;
 	cacheOmegaInit();
-	restartCallback();
-	restartInvoked = false;
+	stopInvoked = false;
+	startCnt++;
 	pthread_cond_broadcast(&cond);
 }
 
+extern bool fftIsRunning() {
+	if (pthread_mutex_trylock(&mutex) == 0) {
+		bool ret = !stopInvoked || (waitingCnt < workersCnt);
+		pthread_mutex_unlock(&mutex);
+		return ret;
+	}
+	return true;
+}
+
 extern void fftResume() {
-	pthread_cond_broadcast(&cond);
+	if (!stopInvoked) {
+		pthread_cond_broadcast(&cond);
+	}
 }
 
 
 static void *fftWorker(void *info) {
+	/*
 	pthread_mutex_lock(&mutex);
 	runningCnt++;
-	if (!fftBlockLen) {
-		waitingCnt++;
-		if (!restartInvoked) {
-			pthread_cond_wait(&cond, &mutex);
-		}
-		if (restartInvoked) {
-			onRestart();
-		}
-		waitingCnt--;
-	}
 	pthread_mutex_unlock(&mutex);
+	*/
 
-
-	char *buffer = NULL;
+	float *buffer = NULL;
 	size_t vectorLen=0;
 	float complex *vector = NULL;
 	float maxVolume, maxAmp;
+	char myStartCnt=0;
 
 	while (true) {
 		while (true) {
-			buffer = exchangeCallback(&((struct workerInfo*)info)->info);
+			if (!stopInvoked) {
+				buffer = exchangeCallback(&((struct workerInfo*)info)->info, myStartCnt != startCnt);
+				myStartCnt = startCnt;
+			}
 			if (buffer) {
-				__sync_synchronize();
-				if (waitingCnt) {
-					fftResume();
-				}
 				break;
 			} else {
 				pthread_mutex_lock(&mutex);
 				waitingCnt++;
-				if (restartInvoked && (waitingCnt >= runningCnt)) {
-					onRestart();
-				} else {
+				do {
 					pthread_cond_wait(&cond, &mutex);
-				}
+				} while (stopInvoked);
 				waitingCnt--;
 				pthread_mutex_unlock(&mutex);
 			}
 		}
-		if (vectorLen != fftBlockLen) {
-			vectorLen = fftBlockLen;
+		if (vectorLen != blockLen) {
+			vectorLen = blockLen;
 			free(vector);
 			vector = malloc(sizeof(float complex)*vectorLen);
 		}
@@ -156,7 +151,7 @@ static void *fftWorker(void *info) {
 		maxVolume=0;
 		size_t i,j,k=0;
 		float complex om, x, a, b;
-		while (k<fftBlockLen) {
+		while (k<vectorLen) {
 #define load(i) \
 			j=cache[i].reversedIndex; \
 			vector[i] = buffer[j] * cache[i].windowValue; \
@@ -214,19 +209,21 @@ static void *fftWorker(void *info) {
 		
 		float multiplier;
 		maxAmp=FLT_MIN;
-		for (size_t i=0; i<fftBlockLen; i++) {
+		for (size_t i=0; i<vectorLen; i++) {
 			float value=cabs(vector[i]);
 			if (maxAmp<value)
 				maxAmp=value;
 		}
 		multiplier=maxVolume/maxAmp;
 
-		for (size_t i=0; i<=fftBlockLen; i++)  // copy the first half only
+		for (size_t i=0; i<=vectorLen/2; i++)  // copy the first half only
 			buffer[i]=cabs(vector[i])*multiplier;
 		buffer = NULL;
 	}
+	/*
 	pthread_mutex_lock(&mutex);
 	runningCnt--;
 	pthread_mutex_unlock(&mutex);
+	*/
 	return NULL;
 }

@@ -35,8 +35,6 @@ double centeredRatio;
 #define SCALE_LABELS_FONT GLUT_BITMAP_HELVETICA_12
 #define KEYBOARD_ALPHA 0.5
 
-static unsigned char colorScale[1024*3]={255};
-
 static void onTimer();
 static void onReshape(int w, int h);
 static void onDisplay();
@@ -57,35 +55,10 @@ void drawerInit(
 	colorOvertones=coloredOvertones;
 	//calcScaleLabels();
 
-	dbuffer.columnLen=0;
-	dbuffer.begin=-DRAWER_BUFFER_SIZE;
-	dbuffer.end=0;
-	dbuffer.dataInvalid=true;
+	dbufferInit();
 	dbufferMove(DRAWER_BUFFER_SIZE/2);
 	
-	if (!colorOvertones) { // initialize colorScale cache
-		size_t i=0;
-		for (; i<64; i++) {
-			colorScale[3*i]  =0;
-			colorScale[3*i+1]=0;
-			colorScale[3*i+2]=sqrt(i)*16;
-		}
-		for (; i<144; i++) {
-			colorScale[3*i]  =sqrt(i)*32-256;
-			colorScale[3*i+1]=0;
-			colorScale[3*i+2]=128;
-		}
-		for (; i<256; i++) {
-			colorScale[3*i]  =sqrt(i)*32-256;
-			colorScale[3*i+1]=0;
-			colorScale[3*i+2]=511-sqrt(i)*32;
-		}
-		for (; i<1024; i++) {
-			colorScale[3*i]  =255;
-			colorScale[3*i+1]=sqrt(i)*16-256;
-			colorScale[3*i+2]=0;
-		}
-	}
+	dmvInit();
 
 	glutReshapeFunc(onReshape);
 	glutDisplayFunc(onDisplay);
@@ -98,41 +71,54 @@ void drawerInit(
 int drawerBufferPos=0;
 int screenCenterColumn=0;
 
-static inline void drawColumn(int screenColumn) {
+static inline void drawColumnColors(int screenColumn, unsigned char *colors) {
+	glRasterPos2i(screenColumn,0);
+	glDrawPixels(1, height, GL_RGB, GL_UNSIGNED_BYTE, colors);
+}
+static inline void drawColumnColor(int screenColumn, GLbyte *color) {
+	glColor3ubv(color);
+	glLineWidth(1);
+	glBegin(GL_LINES);
+	glVertex2i(screenColumn, 0);
+	glVertex2i(screenColumn, height);
+	glEnd();
+}
+static inline void drawColumn(int screenColumn, bool previewOnly) {
 	int column = screenColumn - screenCenterColumn + drawerBufferPos;
+	char *colors=NULL;
 	if (dbufferExists(column)) {
-		if (dbufferState(column) == DBUFF_PROCESSED) {
-			glRasterPos2i(screenColumn,0);
-			glDrawPixels(1, height, GL_RGB, GL_UNSIGNED_BYTE, &dbuffer(column, 0, 0));
+		if (!previewOnly && (dbufferState(column) >= DBUFF_PROCESSED)) {
+			colors=&dbuffer(column, 0, 0);
+			drawColumnColors(screenColumn, colors);
+			dbufferState(column) = DBUFF_DRAWN;
 			return;
 		} else {
 			if (!dbufferPreviewCreated(column)) {
 				dmvCreatePreview(column);
 			}
 			if (dbufferPreviewCreated(column)) {
-				glColor3bv(&dbufferPreview(column, 0));
+				drawColumnColor(screenColumn, &dbufferPreview(column, 0));
 			} else {
-				glColor3f(1,0,0);
+				drawColumnColor(screenColumn, (unsigned char []){255, 0, 0});
+			}
+			if (previewOnly && (dbufferState(column) == DBUFF_DRAWN)) {
+				dbufferState(column) = DBUFF_PROCESSED;
 			}
 		}
 	} else {
-		glColor3f(0,1,1);
+		drawColumnColor(screenColumn, (unsigned char []){0, 255, 255});
 	}
-	glLineWidth(1);
-	glBegin(GL_LINES);
-	glVertex2i(screenColumn, 0);
-	glVertex2i(screenColumn, height-1);
-	glEnd();
 }
 static inline void moveColumnsAndUpdate(int fromScreenColumn, int toScreenColumn, int offset) {
-	glCopyPixels(fromScreenColumn, 0, toScreenColumn, height, GL_COLOR);
+	glRasterPos2i(fromScreenColumn+offset, 0);
+	glCopyPixels(fromScreenColumn, 0, toScreenColumn-fromScreenColumn, height, GL_COLOR);
 	for (
-		int i = fromScreenColumn + offset - screenCenterColumn + drawerBufferPos;
-		i < toScreenColumn + offset - screenCenterColumn + drawerBufferPos;
-		i++) {
-		if (dbufferExists(i) && (dbufferState(i) < DBUFF_DRAWED)) {
+			int i = fromScreenColumn + offset - screenCenterColumn + drawerBufferPos;
+			i <       toScreenColumn + offset - screenCenterColumn + drawerBufferPos;
+			i++) {
+		if (dbufferExists(i) && (dbufferState(i) < DBUFF_DRAWN)) {
 			if ((dbufferState(i) == DBUFF_PROCESSED) || (!dbufferPreviewCreated(i))) {
-				drawColumn(i + screenCenterColumn - drawerBufferPos);
+				drawColumn(i + screenCenterColumn - drawerBufferPos, false);
 			}
 		}
 	}
@@ -145,12 +131,12 @@ static void repaint(bool force) {
 	int offset=drawerBufferPos-oldBufferPos;
 	if (!force && (offset>=0) && (offset<width)) {
 		moveColumnsAndUpdate(offset, width, -offset);
-		for (int i=width-offset; i<width; i++) drawColumn(i);
+		for (int i=width-offset; i<width; i++) drawColumn(i, false);
 	} else if (!force && (offset<0) && (-offset<width)) {
-		moveColumnsAndUpdate(0, width-offset, offset);
-		for (int i=0; i<offset; i++) drawColumn(i);
+		moveColumnsAndUpdate(0, width+offset, -offset);
+		for (int i=0; i<offset; i++) drawColumn(i, false);
 	} else {
-		for (int i=0; i<width; i++) drawColumn(i);
+		for (int i=0; i<width; i++) drawColumn(i, force);
 	}
 	/*
 	static int leftForcedColumns=0;
@@ -223,6 +209,7 @@ static void onTimer() {
 	if (drawerBufferPos != newPos) {
 		//glutPostRedisplay();
 		dbufferMove(newPos-drawerBufferPos);
+		dmvRefresh();
 		repaint(false);
 	}
 	glutTimerFunc(DRAWER_FRAME_DELAY, onTimer, 0);
@@ -236,10 +223,12 @@ static void onReshape(int w, int h) {
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	glOrtho(0, w, 0, h, -1, 1);
-	//dbufferRealloc(h); // XXX
+	glMatrixMode(GL_MODELVIEW); glLoadIdentity(); glTranslatef(0.375, 0.375, 0.);
+	dmvResize(h, screenCenterColumn, w-screenCenterColumn);
 
-	glReadBuffer(GL_BACK);
+	glReadBuffer(GL_FRONT);
 	glDrawBuffer(GL_BACK);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	//glPixelStoref(GL_UNPACK_ROW_LENGTH,width);
 	//glClear(GL_COLOR_BUFFER_BIT);
 }

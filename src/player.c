@@ -10,6 +10,9 @@ static pthread_t thread;
 
 static void *fdReader(void *sourceFile);
 extern void playerUseFDQuiet(FILE *fd, float freqRate) {
+	for (int i = 0; i < PLAYER_BUFFER_SIZE; i++) {
+		playerBuffer.data[i] = 0;
+	}
 	playerBuffer.begin=-PLAYER_BUFFER_SIZE;
 	playerBuffer.end=0;
 	playerPos=0;

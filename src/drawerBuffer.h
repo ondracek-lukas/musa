@@ -12,7 +12,7 @@ struct dbufferS {
 	size_t columnLen;
 	int begin; // inclusive
 	int end;   // exclusive
-	enum {DBUFF_INVALID=-1, DBUFF_EMPTY=0, DBUFF_PROCESSING, DBUFF_PROCESSED, DBUFF_DRAWED} state[DRAWER_BUFFER_SIZE];
+	enum {DBUFF_INVALID=-1, DBUFF_EMPTY=0, DBUFF_PROCESSING, DBUFF_PROCESSED, DBUFF_DRAWN} state[DRAWER_BUFFER_SIZE];
 	bool dataInvalid;
 	unsigned char *data;
 	bool previewCreated[DRAWER_BUFFER_SIZE];
@@ -30,6 +30,7 @@ extern double dbufferColumnsPerSecond;
 #define dbufferExists(column) ((dbuffer.begin <= (column)) && (dbuffer.end > (column)))
 
 
+void dbufferInit();
 void dbufferRealloc(size_t columnLen); // to be called only when all threads are aware of dataInvalid=true
 void dbufferMove(int offset); // to be called only from the main thread
 

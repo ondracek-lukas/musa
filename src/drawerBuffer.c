@@ -7,6 +7,12 @@ struct dbufferS dbuffer;
 double dbufferColumnsPerSecond=0;
 
 
+void dbufferInit() {
+	dbuffer.columnLen=0;
+	dbuffer.begin=-DRAWER_BUFFER_SIZE;
+	dbuffer.end=0;
+	dbuffer.dataInvalid=true;
+}
 void dbufferRealloc(size_t columnLen) { // to be called only when all threads are aware of dataInvalid=true
 	dbuffer.columnLen=columnLen;
 	free(dbuffer.data);
@@ -31,14 +37,14 @@ void dbufferMove(int offset) { // to be called only from the main thread
 		dbuffer.end += offset;
 		__sync_synchronize();
 	} else {
-		dbuffer.end -= offset;
+		dbuffer.end += offset;
 		__sync_synchronize();
-		for (int i=dbuffer.begin-offset; i<dbuffer.begin; i++) {
+		for (int i=dbuffer.begin+offset; i<dbuffer.begin; i++) {
 			if (__sync_lock_test_and_set(&dbufferState(i), DBUFF_INVALID) != DBUFF_PROCESSING)
 				dbufferState(i)=DBUFF_EMPTY;
 			dbufferPreviewCreated(i)=false;
 		}
 		__sync_synchronize();
-		dbuffer.begin -= offset;
+		dbuffer.begin += offset;
 	}
 }

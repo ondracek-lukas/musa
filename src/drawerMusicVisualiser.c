@@ -1,9 +1,22 @@
 // MusA  Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
+#include <math.h>
 #include <float.h>
+#include <limits.h>
+#include "logFft.h"
 #include "drawerScale.h"
 #include "drawerBuffer.h"
 #include "player.h"
+
+
+static int visibleBefore, visibleAfter, processedFrom, processedTo;
+
+
+
+
+// --- COLORING ---
+
+static unsigned char colorScale[1024*3]={255}; // will be initialized below
 
 void dmvCreatePreview(int column) {
 	int playerFrom = dsColumnToPlayerPos(column-1);
@@ -22,14 +35,247 @@ void dmvCreatePreview(int column) {
 	}
 	sum /= (playerTo-playerFrom)*vol;
 	//sum = log(sum);
-	unsigned char value = sum*255;
 	if ((playerBuffer.begin>playerFrom) || (playerBuffer.end<playerTo)) {
 		return;
 	}
-	dbufferPreview(column,0)=value;
-	dbufferPreview(column,1)=value;
-	dbufferPreview(column,2)=value;
+	unsigned valueI = sum*1024;
+	if (valueI>=1024)
+		valueI=1023;
+	valueI*=3;
+	dbufferPreview(column,0) = colorScale[valueI];
+	dbufferPreview(column,1) = colorScale[valueI+1];
+	dbufferPreview(column,2) = colorScale[valueI+2];
 	dbufferPreviewCreated(column)=true;
+}
+
+
+static void createColumn(int column, float *logFftResult) {
+	for (int i=0; i<dbuffer.columnLen; i++) {
+		unsigned valueI = logFftResult[i]*1024;
+		if (valueI>=1024)
+			valueI=1023;
+		valueI*=3;
+
+		dbuffer(column, i, 0) = colorScale[valueI];
+		dbuffer(column, i, 1) = colorScale[valueI+1];
+		dbuffer(column, i, 2) = colorScale[valueI+2];
+	}
+}
+
+
+
+// --- INIT FUNCTIONS ---
+
+void dmvInit() {
+	logFftInit();
+	processedFrom = 0;
+	processedTo = 0;
+
+	// colorScale init
+	size_t i=0;
+	for (; i<64; i++) {
+		colorScale[3*i]  =0;
+		colorScale[3*i+1]=0;
+		colorScale[3*i+2]=sqrt(i)*16;
+	}
+	for (; i<144; i++) {
+		colorScale[3*i]  =sqrt(i)*32-256;
+		colorScale[3*i+1]=0;
+		colorScale[3*i+2]=128;
+	}
+	for (; i<256; i++) {
+		colorScale[3*i]  =sqrt(i)*32-256;
+		colorScale[3*i+1]=0;
+		colorScale[3*i+2]=511-sqrt(i)*32;
+	}
+	for (; i<1024; i++) {
+		colorScale[3*i]  =255;
+		colorScale[3*i+1]=sqrt(i)*16-256;
+		colorScale[3*i+2]=0;
+	}
+}
+
+
+static int newColumnLen, newVisibleBefore, newVisibleAfter;
+static void onRestart();
+static logFftDataExchangeCallbackT onDataExchange;
+void dmvResize(int columnLen, int visibleBefore, int visibleAfter) {
+	dbuffer.dataInvalid = true;
+	newColumnLen = columnLen;
+	newVisibleBefore = visibleBefore;
+	newVisibleAfter  = visibleAfter;
+	logFftStop();
+}
+void dmvRefresh() {
+	if (logFftIsRunning()) {
+		if ((processedTo < dbuffer.begin) || (processedFrom > dbuffer.end)) {
+			processedTo = processedFrom = dsPlayerPosToColumn(playerPos);
+		} else {
+			if (processedTo > dbuffer.end) {
+				processedTo = dbuffer.end;
+			} else {
+				while ((processedTo < dbuffer.end) && (dbufferState(processedTo) >= DBUFF_PROCESSED)) {
+					processedTo++;
+				}
+			}
+			if (processedFrom < dbuffer.begin) {
+				processedFrom = dbuffer.begin;
+			} else {
+				while ((processedFrom > dbuffer.begin) && (dbufferState(processedFrom-1) >= DBUFF_PROCESSED)) {
+					processedFrom--;
+				}
+			}
+		}
+
+		logFftResume();
+	} else {
+		dbufferRealloc(newColumnLen);
+		visibleBefore = newVisibleBefore;
+		visibleAfter = newVisibleAfter;
+		processedTo = processedFrom = dsPlayerPosToColumn(playerPos);
+		logFftStart(0.0025, 0.05, newColumnLen, onDataExchange);
+	}
+}
+
+
+// --- DATA PROCESSING ---
+
+struct column {
+	int pos;
+};
+
+static inline int tryLoadInput(
+		int pos,
+		size_t neighbourhoodNeeded,
+		void (*loadInput)(float *data, float *endData)) {
+	if (pos<0) return 0b01; // no previous will be successful
+	if (dbufferTransactionBegin(pos)) {
+		int posPlayer = dsColumnToPlayerPos(pos);
+		int posPlayerFrom = posPlayer - neighbourhoodNeeded; // inclusive
+		int posPlayerTo   = posPlayer + neighbourhoodNeeded; // exclusive
+		if (playerBuffer.end < posPlayerTo) {
+			dbufferTransactionAbort(pos);
+			return 0b10;  // no further will be successful
+		}
+		if (playerBuffer.begin > posPlayerFrom) {
+			//pos = dsPlayerPosToColumn(playerBuffer.begin)+neighbourhoodNeeded - 1;
+			dbufferTransactionAbort(pos);
+			return 0b01;  // no previous will be successful
+		}
+		if (playerBufferWrapBetween(posPlayerFrom, posPlayerTo)) {
+			loadInput(&playerBuffer(posPlayerFrom), playerBuffer.data + PLAYER_BUFFER_SIZE);
+			loadInput(playerBuffer.data, &playerBuffer(posPlayerTo));
+		} else {
+			loadInput(&playerBuffer(posPlayerFrom), &playerBuffer(posPlayerTo));
+		}
+		if ((playerBuffer.end < posPlayerTo) || (playerBuffer.begin > posPlayerFrom)) {
+			dbufferTransactionAbort(pos);
+			loadInput(NULL, NULL);
+			return 0b11;  // try other
+		}
+		return 0b00; // success
+	}
+	return 0b11; // try other
+}
+
+static bool onDataExchange(
+		void **info,
+		float *resultData,
+		size_t neighbourhoodNeeded,
+		void (*loadInput)(float *data, float *dataEnd)) {
+	struct column *column = *info;
+	int pos;
+	if (!column) {
+		column = malloc(sizeof(struct column));
+		column->pos = -1;
+		*info = column;
+		pos=column->pos;
+	} else if (column->pos >= 0) {
+		pos=column->pos;
+		if (resultData) {
+			if (dbufferTransactionCheck(pos)) {
+				createColumn(pos, resultData);
+				dbufferTransactionCommit(pos);
+			} else {
+				dbufferTransactionAbort(pos);
+			}
+		} else {
+			dbufferTransactionAbort(pos);
+		}
+	}
+
+
+	int bufferPos = dsPlayerPosToColumn(playerPos);
+	int visibleTo = bufferPos+visibleAfter;
+	if (visibleTo > dbuffer.end) visibleTo = dbuffer.end;
+	int visibleFrom = bufferPos-visibleBefore;
+	if (visibleFrom < dbuffer.begin) visibleFrom = dbuffer.begin;
+	if (visibleFrom < 0) visibleFrom = 0;
+
+	int tmp=0;
+
+	for (pos = processedTo; pos < visibleTo; pos++) {
+		tmp++;
+		switch (tryLoadInput(pos, neighbourhoodNeeded, loadInput)) {
+			case 0b00: // success
+				column->pos = pos;
+				return true;
+			case 0b11: // try other
+			case 0b01: // no previous will success
+				continue;
+			case 0b10: // no further will success
+				pos = INT_MAX-1;
+				break;
+		}
+	}
+
+	for (pos = processedFrom-1; pos >= visibleFrom; pos--) {
+		tmp++;
+		switch (tryLoadInput(pos, neighbourhoodNeeded, loadInput)) {
+			case 0b00: // success
+				column->pos = pos;
+				return true;
+			case 0b11: // try other
+			case 0b10: // no further will success
+				continue;
+			case 0b01: // no previous will success
+				pos = INT_MIN+1;
+				break;
+		}
+	}
+
+	for (pos = (visibleTo>processedTo ? visibleTo : processedTo); pos < dbuffer.end; pos++) {
+		tmp++;
+		switch (tryLoadInput(pos, neighbourhoodNeeded, loadInput)) {
+			case 0b00: // success
+				column->pos = pos;
+				return true;
+			case 0b11: // try other
+			case 0b01: // no previous will success
+				continue;
+			case 0b10: // no further will success
+				pos = INT_MAX-1;
+				break;
+		}
+	}
+
+	for (pos = (visibleFrom<processedFrom ? visibleFrom : processedFrom)-1; pos >= dbuffer.begin; pos--) {
+		tmp++;
+		switch (tryLoadInput(pos, neighbourhoodNeeded, loadInput)) {
+			case 0b00: // success
+				column->pos = pos;
+				return true;
+			case 0b11: // try other
+			case 0b10: // no further will success
+				continue;
+			case 0b01: // no previous will success
+				pos = INT_MIN+1;
+				break;
+		}
+	}
+
+	column->pos = -1;
+	return false;
 }
 
 /*
