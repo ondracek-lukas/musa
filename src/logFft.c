@@ -10,11 +10,12 @@ static logFftDataExchangeCallbackT *exchangeCallback = NULL;
 static void (*restartCallback)() = NULL;
 
 float minFreqMult, maxFreqMult;
-int outputLen, blockLen, firstBlock, lastBlock;
+int outputLen, blockLen, blockLenLog2, firstBlock, lastBlock;
 
 struct column {
 	void *info;
 	int blocksProcessed;
+	int blocksCnt;
 	float *fftBlocks;
 	float *result;
 };
@@ -31,7 +32,8 @@ extern void logFftStart(
 		float newMinFreqMult,
 		float newMaxFreqMult,
 		int newOutputLen,
-		logFftDataExchangeCallbackT newExchangeCallback) {
+		logFftDataExchangeCallbackT newExchangeCallback,
+		unsigned char *minPrecision, unsigned char *maxPrecision) {
 
 	minFreqMult = newMinFreqMult;
 	maxFreqMult = newMaxFreqMult;
@@ -41,10 +43,13 @@ extern void logFftStart(
 	exchangeCallback=newExchangeCallback;
 
 	float blocksPerColumnF = log2f(maxFreqMult/minFreqMult);
-	int blockLenLog2=ceilf(log2f( 2*outputLen/blocksPerColumnF ));
+	blockLenLog2=ceilf(log2f( 2*outputLen/blocksPerColumnF ));
 	blockLen = 1<<blockLenLog2;
 
-	printf("blockLen: %d, blocks: %d\n", blockLen, lastBlock+1);
+	*minPrecision = blockLenLog2 - 1 + firstBlock; // log of neighbourhood needed
+	*maxPrecision = blockLenLog2 - 1 + lastBlock;
+
+	printf("blockLen: %d, blocks: %d, prec: %d--%d\n", blockLen, lastBlock+1, *minPrecision, *maxPrecision);
 
 	free(avgMagRepairTbl);
 	avgMagRepairTbl = malloc((lastBlock-(firstBlock?firstBlock:1)+1) * blockLen/2 * sizeof(float));
@@ -86,13 +91,13 @@ static float *onDataExchange(void **info, bool restarted) {
 				columnBlock(i,j) *= avgMagRepairTbl(i,j);
 			}
 		}
-		if (++column->blocksProcessed < lastBlock-firstBlock+1) {
+		if (++column->blocksProcessed < column->blocksCnt) {
 			return column->fftBlocks + column->blocksProcessed * blockLen;
 		} else {
 			resultData = column->result;
 			double freqMultPerItem = exp2(log2(maxFreqMult/minFreqMult)/(outputLen-1));
 			float freq = minFreqMult;
-			int last = lastBlock;
+			int last = firstBlock + column->blocksCnt - 1;
 			for (int i = 0; i < outputLen; i++) {
 				float value = FLT_MAX;
 				for (int j = last; j >= firstBlock; j--) {
@@ -121,21 +126,23 @@ static float *onDataExchange(void **info, bool restarted) {
 		}
 	}
 
-	int pos = -blockLen << lastBlock;
+	int pos;
 	int halfBlockLen = blockLen/2;
 	float avgs[lastBlock+1];
-	void loadInput(float *data, float *dataEnd) {
-		if (!data) { // clear
-			pos = -blockLen << lastBlock;
-			return;
+	column->blocksCnt = 0;
+	void loadInput(unsigned char precision, float *data, float *dataEnd) {
+		if (column->blocksCnt != precision - blockLenLog2 + 1 - firstBlock + 1) { // clear
+			column->blocksCnt = precision - blockLenLog2 + 1 - firstBlock + 1;
+			pos = -1 << precision;
 		}
+		int last = firstBlock + column->blocksCnt - 1;
 		for (; data<dataEnd; data++, pos++) {
 			avgs[0] = *data;
 			for (int i=0, p=pos; ; i++, p>>=1) {
 				if ((p >= -halfBlockLen) && (p < halfBlockLen) && (i >= firstBlock)) {
 					columnBlock(i, p+halfBlockLen) = avgs[i];
 				}
-				if (i >= lastBlock) break;
+				if (i >= last) break;
 				if (!(p&1)) {
 					avgs[i+1] = avgs[i];
 					break;
@@ -145,7 +152,7 @@ static float *onDataExchange(void **info, bool restarted) {
 			}
 		}
 	}
-	if (!exchangeCallback(&column->info, resultData, -pos, loadInput)) {
+	if (!exchangeCallback(&column->info, resultData, loadInput)) {
 		column->blocksProcessed=-1;
 		return NULL;
 	}

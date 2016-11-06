@@ -6,11 +6,15 @@
 #include <stdbool.h>
 #include "fft.h"
 
+typedef void (logFftLoadInputT)(
+		unsigned char precision,
+		float *data,
+		float *dataEnd); // exclusive
+
 typedef bool (logFftDataExchangeCallbackT)(
 		void **info,
 		float *resultData,
-		size_t neighbourhoodNeeded,
-		void (*loadInput)(float *data, float *dataEnd)); // dataEnd is exlusive
+		logFftLoadInputT *loadInput);
 
 extern void logFftInit();
 
@@ -19,7 +23,8 @@ extern void logFftStart(
 		float minFreqMult, // min frequency in multiples of sample rate
 		float maxFreqMult, // max frequency in multiples of sample rate
 		int outputLen,
-		logFftDataExchangeCallbackT *dataExchangeCallback);
+		logFftDataExchangeCallbackT *dataExchangeCallback,
+		unsigned char *minPrecision, unsigned char *maxPrecision);
 static inline bool logFftIsRunning() {
 	return fftIsRunning();
 }

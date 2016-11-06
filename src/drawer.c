@@ -87,10 +87,11 @@ static inline void drawColumn(int screenColumn, bool previewOnly) {
 	int column = screenColumn - screenCenterColumn + drawerBufferPos;
 	char *colors=NULL;
 	if (dbufferExists(column)) {
-		if (!previewOnly && (dbufferState(column) >= DBUFF_PROCESSED)) {
+		dbufferDrawn(column) = true;
+		__sync_synchronize(); // XXX maybe slow
+		if (!previewOnly && (dbufferPrecision(column) > 0)) {
 			colors=&dbuffer(column, 0, 0);
 			drawColumnColors(screenColumn, colors);
-			dbufferState(column) = DBUFF_DRAWN;
 			return;
 		} else {
 			if (!dbufferPreviewCreated(column)) {
@@ -101,43 +102,51 @@ static inline void drawColumn(int screenColumn, bool previewOnly) {
 			} else {
 				drawColumnColor(screenColumn, (unsigned char []){255, 0, 0});
 			}
-			if (previewOnly && (dbufferState(column) == DBUFF_DRAWN)) {
-				dbufferState(column) = DBUFF_PROCESSED;
+			if (previewOnly && (dbufferPrecision(column) > 0)) {
+				dbufferDrawn(column) = false;
 			}
 		}
 	} else {
 		drawColumnColor(screenColumn, (unsigned char []){0, 255, 255});
 	}
 }
-static inline void moveColumnsAndUpdate(int fromScreenColumn, int toScreenColumn, int offset) {
-	glRasterPos2i(fromScreenColumn+offset, 0);
-	glCopyPixels(fromScreenColumn, 0, toScreenColumn-fromScreenColumn, height, GL_COLOR);
-	for (
-			int i = fromScreenColumn + offset - screenCenterColumn + drawerBufferPos;
-			i <       toScreenColumn + offset - screenCenterColumn + drawerBufferPos;
-			i++) {
-		if (dbufferExists(i) && (dbufferState(i) < DBUFF_DRAWN)) {
-			if ((dbufferState(i) == DBUFF_PROCESSED) || (!dbufferPreviewCreated(i))) {
-				drawColumn(i + screenCenterColumn - drawerBufferPos, false);
-			}
-		}
+static inline void moveColumns(int offset) {
+	int cnt, from, to;
+	if (offset > 0) {
+		cnt  = width - offset; from = offset; to = 0;
+	} else {
+		cnt  = width + offset; from = 0; to = -offset;
 	}
+	glRasterPos2i(to, 0);
+	glCopyPixels(from, 0, cnt, height, GL_COLOR);
 }
 
 // Draws the view, possibly moving some area (if not forced)
 static void repaint(bool force) {
-	int oldBufferPos=drawerBufferPos;
-	drawerBufferPos=dsPlayerPosToColumn(playerPos);
+	static int oldBufferPos=0;
 	int offset=drawerBufferPos-oldBufferPos;
-	if (!force && (offset>=0) && (offset<width)) {
-		moveColumnsAndUpdate(offset, width, -offset);
-		for (int i=width-offset; i<width; i++) drawColumn(i, false);
-	} else if (!force && (offset<0) && (-offset<width)) {
-		moveColumnsAndUpdate(0, width+offset, -offset);
-		for (int i=0; i<offset; i++) drawColumn(i, false);
+	if (offset > 0) {
+		for (int i = width-offset+oldBufferPos-screenCenterColumn; i<width+oldBufferPos-screenCenterColumn; i++) {
+			dbufferDrawn(i) = false;
+		}
 	} else {
-		for (int i=0; i<width; i++) drawColumn(i, force);
+		for (int i = oldBufferPos-screenCenterColumn; i<offset+oldBufferPos-screenCenterColumn; i++) {
+			dbufferDrawn(i) = false;
+		}
 	}
+	if (!force && (abs(offset) < width)) {
+		moveColumns(offset);
+	}
+
+	for (int i=0; i<width; i++) {
+		if (!dbufferDrawn(i+drawerBufferPos-screenCenterColumn)) {
+			drawColumn(i, force);
+		}
+	}
+
+	oldBufferPos = drawerBufferPos;
+
+
 	/*
 	static int leftForcedColumns=0;
 	if (!force && !newColumns)
@@ -207,8 +216,8 @@ static void onTimer() {
 	__sync_synchronize();
 	int newPos=dsPlayerPosToColumn(playerPos);
 	if (drawerBufferPos != newPos) {
-		//glutPostRedisplay();
 		dbufferMove(newPos-drawerBufferPos);
+		drawerBufferPos = newPos;
 		dmvRefresh();
 		repaint(false);
 	}
