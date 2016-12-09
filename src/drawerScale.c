@@ -2,11 +2,55 @@
 
 #include <math.h>
 #include "drawerScale.h"
+#include "drawerBuffer.h"
+#include "util.h"
 
 double dsColumnToPlayerPosMultiplier;
 
-bool dsTones;
-double dsMinFreq, dsMaxFreq, dsAnchoredFreq;
+double dsMinFreq, dsMaxFreq, dsA1Freq;
+double dsOctaveOffset, dsSemitoneOffset, dsA1Index;
+
+const bool isKeyWhite[] = {1,0,1,0,1, 1,0,1,0,1,0,1}; // 9 ~ A
+struct dsOvertonesS dsOvertones[DS_OVERTONES_CNT];
+
+static inline void setColumnOverlayColor(int index, unsigned char r, unsigned char g, unsigned char b, unsigned char a) {
+	if ((index >= 0) && (index < dbuffer.columnLen)) {
+		dbufferColumnOverlay(index,0) = r;
+		dbufferColumnOverlay(index,1) = g;
+		dbufferColumnOverlay(index,2) = b;
+		dbufferColumnOverlay(index,3) = a;
+	}
+}
+
+extern void dsSetToneScale(double minFreq, double maxFreq, double a1Freq) {
+	dsMinFreq = minFreq;
+	dsMaxFreq = maxFreq;
+	dsA1Freq  = a1Freq;
+	dsOctaveOffset = dbuffer.columnLen / log2(dsMaxFreq/dsMinFreq);
+	dsSemitoneOffset = dsOctaveOffset / 12;
+	dsA1Index = 12*log2(dsA1Freq/dsMinFreq) * dsSemitoneOffset;
+
+	double toneRadius = dsSemitoneOffset/2 - 2;
+	if (toneRadius > 10) toneRadius = 10;
+	if (toneRadius < 5) toneRadius = 0;
+	int tone = -dsA1Index / dsSemitoneOffset -1;
+	double index = dsA1Index + tone*dsSemitoneOffset;
+	tone = ((tone % 12) + 12 + 9) % 12;
+	for (; index-toneRadius < dbuffer.columnLen; index+=dsSemitoneOffset, tone = (tone+1)%12) {
+		unsigned char color = (tone > 0 ? (isKeyWhite[tone] ? 128 : 64) : 255);
+		for (int i = index-toneRadius+1; i < index+toneRadius; i++) {
+			setColumnOverlayColor(i, color, color, color, 64);
+		}
+		setColumnOverlayColor(index-toneRadius, color, color, color, 128);
+		setColumnOverlayColor(index+toneRadius, color, color, color, 128);
+	}
+
+	for (int i=0; i < DS_OVERTONES_CNT; i++) {
+		double offset = log2(i+2) * dsOctaveOffset;
+		dsOvertones[i].offset = offset;
+		dsOvertones[i].offsetFract = offset - dsOvertones[i].offset;
+	}
+}
 
 // --- SCALE CONVERSION ---
 /*
@@ -75,7 +119,7 @@ static void calcScaleLabels() {
 	scalePosToInputIndexMultiplier=scaleMinFreq/(scaleMaxFreq-scaleMinFreq)*(inputColumnLenToDraw-1);
 
 	free(scalePosToInputIndexCache);
-	scalePosToInputIndexCache=malloc(sizeof(double)*height);
+	scalePosToInputIndexCache=utilMalloc(sizeof(double)*height);
 	for (size_t i=0; i<height; i++)
 		scalePosToInputIndexCache[i]=scalePosToInputIndexUncached(i);
 
@@ -91,7 +135,7 @@ static void calcScaleLabels() {
 		keyboardMinTone=((tone-4)%12+12)%12;
 		free(scaleLabels);
 		scaleLabelsCnt=(size_t)ceil(log(scaleMaxFreq/freq)/log(multiplier));
-		scaleLabels=malloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
+		scaleLabels=utilMalloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
 		for (size_t i=0; i<scaleLabelsCnt; freq*=multiplier, i++, tone++) {
 			scaleLabels[i].pos=(size_t)(scaleFreqToPos(freq)+0.5);
 			if ((height-scaleLabels[i].pos>SCALE_LABELS_FONT_HEIGHT) &&
@@ -113,7 +157,7 @@ static void calcScaleLabels() {
 		for (; freq<scaleMinFreq; freq*=multiplier);
 		free(scaleLabels);
 		scaleLabelsCnt=(size_t)ceil(log(scaleMaxFreq/freq)/log(multiplier));
-		scaleLabels=malloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
+		scaleLabels=utilMalloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
 		for (size_t i=0; i<scaleLabelsCnt; freq*=multiplier, i++) {
 			scaleLabels[i].pos=(size_t)(scaleFreqToPos(freq)+0.5);
 			if (height-scaleLabels[i].pos>SCALE_LABELS_FONT_HEIGHT)

@@ -19,6 +19,7 @@ struct dbufferS {
 	unsigned char *data;
 	bool previewCreated[DRAWER_BUFFER_SIZE];
 	unsigned char preview[DRAWER_BUFFER_SIZE*3];
+	unsigned char *columnOverlay;
 };
 
 extern struct dbufferS dbuffer;
@@ -33,6 +34,7 @@ extern double dbufferColumnsPerSecond;
 #define dbufferPrecision(column) dbuffer.precision[dbufferColToI(column)]
 #define dbufferDrawn(column) dbuffer.drawn[dbufferColToI(column)]
 #define dbufferExists(column) ((dbuffer.begin <= (column)) && (dbuffer.end > (column)))
+#define dbufferColumnOverlay(pixel,channel) dbuffer.columnOverlay[(pixel) * 4 + (channel)]
 
 
 void dbufferInit();

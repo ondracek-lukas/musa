@@ -5,16 +5,35 @@
 
 #include <stdbool.h>
 
-extern double dsColumnToPlayerPosMultiplier; // to be initialized from drawer
 
-extern bool dsTones;
-extern double dsMinFreq, dsMaxFreq, dsAnchoredFreq;
+// --- TIME SCALE ---
+
+extern double dsColumnToPlayerPosMultiplier;
+
+static inline void dsSetTimeScale(double sampleRate, double columnsPerSecond) {
+	dsColumnToPlayerPosMultiplier = sampleRate / columnsPerSecond;
+}
 
 static inline int dsColumnToPlayerPos(int column) {
 	return column * dsColumnToPlayerPosMultiplier;
 }
+
 static inline int dsPlayerPosToColumn(int playerPos) {
 	return playerPos / dsColumnToPlayerPosMultiplier;
 }
+
+
+// --- TONE SCALE ---
+
+#define DS_OVERTONES_CNT 16
+
+extern double dsMinFreq, dsMaxFreq, dsA1Freq;
+extern double dsSemitoneOffset, dsA1Index;
+extern struct dsOvertonesS {
+	int offset;          // lower whole part of the offset
+	float offsetFract;   // the fractional part
+} dsOvertones[DS_OVERTONES_CNT];
+
+extern void dsSetToneScale(double minFreq, double maxFreq, double a1Freq);
 
 #endif

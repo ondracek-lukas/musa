@@ -8,6 +8,7 @@
 #include <complex.h>
 #include <math.h>
 #include <float.h>
+#include "util.h"
 
 #include "fft.h"
 
@@ -55,14 +56,14 @@ static inline size_t reverseLowerBits(size_t value, size_t cnt) {
 
 static void cacheOmegaInit() {
 	free(cache);
-	cache=malloc(sizeof(struct cache)*blockLen);
+	cache=utilMalloc(sizeof(struct cache)*blockLen);
 	for (size_t i=0; i<blockLen; i++) {
 		size_t j=reverseLowerBits(i,blockLenLog2);
 		cache[i].reversedIndex=j;
 		cache[i].windowValue=fftWindow(j);
 	}
 	free(omega);
-	omega=malloc(sizeof(float complex)*blockLenLog2);
+	omega=utilMalloc(sizeof(float complex)*blockLenLog2);
 	for (size_t i=0, k=1; i<blockLenLog2; i++, k*=2)
 		omega[i]=cexpf(I*M_PI/k);
 }
@@ -72,7 +73,7 @@ static char startCnt = 0;
 
 extern void fftInit() {
 	workersCnt=sysconf(_SC_NPROCESSORS_ONLN);
-	workers=malloc(sizeof(struct workerInfo)*workersCnt);
+	workers=utilMalloc(sizeof(struct workerInfo)*workersCnt);
 	for (size_t i=0; i<workersCnt; i++) {
 		workers[i].id=i;
 		workers[i].info=NULL;
@@ -112,16 +113,9 @@ extern void fftResume() {
 
 
 static void *fftWorker(void *info) {
-	/*
-	pthread_mutex_lock(&mutex);
-	runningCnt++;
-	pthread_mutex_unlock(&mutex);
-	*/
-
 	float *buffer = NULL;
 	size_t vectorLen=0;
 	float complex *vector = NULL;
-	float maxVolume, maxAmp;
 	char myStartCnt=0;
 
 	while (true) {
@@ -145,18 +139,15 @@ static void *fftWorker(void *info) {
 		if (vectorLen != blockLen) {
 			vectorLen = blockLen;
 			free(vector);
-			vector = malloc(sizeof(float complex)*vectorLen);
+			vector = utilMalloc(sizeof(float complex)*vectorLen);
 		}
 
-		maxVolume=0;
 		size_t i,j,k=0;
 		float complex om, x, a, b;
 		while (k<vectorLen) {
 #define load(i) \
 			j=cache[i].reversedIndex; \
-			vector[i] = buffer[j] * cache[i].windowValue; \
-			if (maxVolume<cabs(vector[i])) \
-				maxVolume=cabs(vector[i]);
+			vector[i] = buffer[j] * cache[i].windowValue;
 
 #define process(mask, maskI) \
 				om=omega[maskI]; \
@@ -206,24 +197,10 @@ static void *fftWorker(void *info) {
 #undef load
 #undef process
 		}
-		
-		float multiplier;
-		maxAmp=FLT_MIN;
-		for (size_t i=0; i<vectorLen; i++) {
-			float value=cabs(vector[i]);
-			if (maxAmp<value)
-				maxAmp=value;
-		}
-		multiplier=maxVolume/maxAmp;
 
 		for (size_t i=0; i<=vectorLen/2; i++)  // copy the first half only
-			buffer[i]=cabs(vector[i])*multiplier;
+			buffer[i]=cabs(vector[i])/vectorLen;
 		buffer = NULL;
 	}
-	/*
-	pthread_mutex_lock(&mutex);
-	runningCnt--;
-	pthread_mutex_unlock(&mutex);
-	*/
 	return NULL;
 }

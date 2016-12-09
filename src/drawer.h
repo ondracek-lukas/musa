@@ -6,8 +6,7 @@
 #define DRAWER_FRAME_DELAY 10   // ms
 
 extern void drawerInit(
-	double columnsPerSecond, double centeredColumnRatio,
-	double minFrequency, double maxFrequency, double anchoredFrequency,
-	bool tones, bool hideScaleLines, bool showKeyboard, bool coloredOvertones);
+	double columnsPerSecond, double unplayedPerc,
+	double minFrequency, double maxFrequency, double a1Frequency);
 
 #endif

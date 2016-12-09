@@ -5,6 +5,7 @@
 #include <float.h>
 #include "fft.h"
 #include "logFft.h"
+#include "util.h"
 
 static logFftDataExchangeCallbackT *exchangeCallback = NULL;
 static void (*restartCallback)() = NULL;
@@ -52,7 +53,7 @@ extern void logFftStart(
 	printf("blockLen: %d, blocks: %d, prec: %d--%d\n", blockLen, lastBlock+1, *minPrecision, *maxPrecision);
 
 	free(avgMagRepairTbl);
-	avgMagRepairTbl = malloc((lastBlock-(firstBlock?firstBlock:1)+1) * blockLen/2 * sizeof(float));
+	avgMagRepairTbl = utilMalloc((lastBlock-(firstBlock?firstBlock:1)+1) * blockLen/2 * sizeof(float));
 	for (int i = (firstBlock?firstBlock:1); i <= lastBlock; i++) {
 		double cosStep = M_PI / (1<<i) / blockLen;
 		for (int j = 1; j <= blockLen/2; j++) {
@@ -78,11 +79,11 @@ static float *onDataExchange(void **info, bool restarted) {
 			free(column->fftBlocks);
 			free(column->result);
 		} else {
-			column = malloc(sizeof(struct column));
+			column = utilMalloc(sizeof(struct column));
 		}
 		column->info = NULL;
-		column->fftBlocks = malloc(blockLen * (lastBlock-firstBlock+1) * sizeof(float));
-		column->result = malloc(outputLen * sizeof(float));
+		column->fftBlocks = utilMalloc(blockLen * (lastBlock-firstBlock+1) * sizeof(float));
+		column->result = utilMalloc(outputLen * sizeof(float));
 		*info = column;
 	} else if (column->blocksProcessed >= 0) {
 		if (column->blocksProcessed > 0) {

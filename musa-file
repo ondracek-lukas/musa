@@ -8,10 +8,10 @@ if [[ "$*" = "-?" ]]; then
 	echo
 	echo "  -?"
 	echo
-	echo "  --file <input-file-name>"
+	echo "  -f <input-file-name>"
 	echo "       required"
 	echo
-	echo "  --rate <sample_rate>"
+	echo "  -i <sample_rate>"
 	echo "       rate to be used for encoding"
 	echo "       default: file sampling rate"
 	echo
@@ -25,13 +25,13 @@ fi
 exit_on_unknown_param=false
 exit_on_missing_param=true
 remove_wanted_param=true
-wanted_param=--file
+wanted_param=-f
 . $path/utils/catch-arg.sh
 file=$value
 
 exit_on_missing_param=false
 remove_wanted_param=false
-wanted_param=--rate
+wanted_param=-i
 . $path/utils/catch-arg.sh
 rate=$value
 
@@ -50,4 +50,4 @@ fi
 
 $path/utils/file2raw --file "$file" --rate "$rate" 2>/dev/null |
 $path/utils/play-forward-raw --rate "$rate" |
-$path/musa --rate "$rate" "$@"
+$path/musa -i "$rate" "$@"

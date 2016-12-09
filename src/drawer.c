@@ -20,12 +20,10 @@ static size_t newColumns=0;
 static size_t inputColumnLen=1;
 static size_t inputColumnLenToDraw=1;
 
-bool drawScaleLines=true;
-bool drawKeyboard=false;
-bool colorOvertones=false;
 float keyboardMinFreq;
 unsigned keyboardMinTone;
 double centeredRatio;
+double minFreq, maxFreq, a1Freq;
 
 #define SCALE_LINES_ALPHA_MAIN 0.5
 #define SCALE_LINES_ALPHA_OTHER 0.3
@@ -40,20 +38,16 @@ static void onReshape(int w, int h);
 static void onDisplay();
 
 void drawerInit(
-	double columnsPerSecond, double centeredColumnRatio,
-	double minFrequency, double maxFrequency, double anchoredFrequency,
-	bool tones, bool hideScaleLines, bool showKeyboard, bool coloredOvertones) {
+	double columnsPerSecond, double unplayedPerc,
+	double minFrequency, double maxFrequency, double a1Frequency) {
 	dbufferColumnsPerSecond = columnsPerSecond;
-	dsColumnToPlayerPosMultiplier = playerFreqRate/columnsPerSecond;
-	centeredRatio = centeredColumnRatio;
-	dsMinFreq=minFrequency;
-	dsMaxFreq=maxFrequency;
-	dsAnchoredFreq=anchoredFrequency;
-	dsTones=tones;
-	drawScaleLines=!hideScaleLines;
-	drawKeyboard=showKeyboard;
-	colorOvertones=coloredOvertones;
-	//calcScaleLabels();
+
+	dsSetTimeScale(playerSampleRate, columnsPerSecond);
+
+	centeredRatio = 1-unplayedPerc/100;
+	minFreq=minFrequency;
+	maxFreq=maxFrequency;
+	a1Freq=a1Frequency;
 
 	dbufferInit();
 	dbufferMove(DRAWER_BUFFER_SIZE/2);
@@ -83,6 +77,10 @@ static inline void drawColumnColor(int screenColumn, GLbyte *color) {
 	glVertex2i(screenColumn, height);
 	glEnd();
 }
+static inline void drawColumnOverlay(int screenColumn, GLbyte *colorsA) {
+	glRasterPos2i(screenColumn,0);
+	glDrawPixels(1, height, GL_RGBA, GL_UNSIGNED_BYTE, colorsA);
+}
 static inline void drawColumn(int screenColumn, bool previewOnly) {
 	int column = screenColumn - screenCenterColumn + drawerBufferPos;
 	char *colors=NULL;
@@ -92,7 +90,6 @@ static inline void drawColumn(int screenColumn, bool previewOnly) {
 		if (!previewOnly && (dbufferPrecision(column) > 0)) {
 			colors=&dbuffer(column, 0, 0);
 			drawColumnColors(screenColumn, colors);
-			return;
 		} else {
 			if (!dbufferPreviewCreated(column)) {
 				dmvCreatePreview(column);
@@ -108,6 +105,9 @@ static inline void drawColumn(int screenColumn, bool previewOnly) {
 		}
 	} else {
 		drawColumnColor(screenColumn, (unsigned char []){0, 255, 255});
+	}
+	if (!dbuffer.dataInvalid) {
+		drawColumnOverlay(screenColumn, dbuffer.columnOverlay);
 	}
 }
 static inline void moveColumns(int offset) {
@@ -233,13 +233,15 @@ static void onReshape(int w, int h) {
 	glLoadIdentity();
 	glOrtho(0, w, 0, h, -1, 1);
 	glMatrixMode(GL_MODELVIEW); glLoadIdentity(); glTranslatef(0.375, 0.375, 0.);
-	dmvResize(h, screenCenterColumn, w-screenCenterColumn);
+	dmvResize(h, screenCenterColumn, w-screenCenterColumn,
+			minFreq, maxFreq, a1Freq);
 
 	glReadBuffer(GL_FRONT);
 	glDrawBuffer(GL_BACK);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	//glPixelStoref(GL_UNPACK_ROW_LENGTH,width);
-	//glClear(GL_COLOR_BUFFER_BIT);
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 static void onDisplay() {

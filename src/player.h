@@ -20,8 +20,8 @@ struct {
 
 int playerPos;      // current position in the stream
 bool playerRunning;  // end of stream has been reached
-double playerFreqRate;
+float playerSampleRate;
 
-extern void playerUseFDQuiet(FILE *fd, float freqRate);
+extern void playerUseFDQuiet(FILE *fd, float sampleRate);
 
 #endif

@@ -8,7 +8,7 @@ if [[ "$*" = "-?" ]]; then
 	echo
 	echo "  -?"
 	echo
-	echo "  --rate <sample_rate>"
+	echo "  -i <sample_rate>"
 	echo "       rate to be used for recording"
 	echo "       default: 44100"
 	echo
@@ -20,7 +20,7 @@ fi
 
 exit_on_missing_param=false
 remove_wanted_param=false
-wanted_param=--rate
+wanted_param=-i
 . $path/utils/catch-arg.sh
 rate=$value
 
@@ -29,5 +29,7 @@ if [[ -z $rate ]]; then
 	rate=44100
 fi
 
+echo $path/musa -i "$rate" "$@"
+
 $path/utils/rec-raw --rate "$rate" 2>/dev/null |
-$path/musa --rate "$rate" "$@"
+$path/musa -i "$rate" "$@"

@@ -17,6 +17,7 @@ void dbufferRealloc(size_t columnLen) { // to be called only when all threads ar
 	dbuffer.columnLen=columnLen;
 	free(dbuffer.data);
 	dbuffer.data = calloc(columnLen*DRAWER_BUFFER_SIZE*3, sizeof(unsigned char));
+	dbuffer.columnOverlay = calloc(columnLen*4, sizeof(unsigned char));
 	for (int i=dbuffer.begin; i<dbuffer.end; i++) {
 		dbufferState(i) = DBUFF_READY;
 		dbufferPrecision(i) = 0;
