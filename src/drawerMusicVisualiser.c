@@ -1,13 +1,15 @@
-// MusA  Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+// MusA  Copyright (C) 2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
 #include <math.h>
 #include <float.h>
 #include <limits.h>
+#include <string.h>
 #include "logFft.h"
 #include "drawerScale.h"
 #include "drawerBuffer.h"
 #include "player.h"
 #include "util.h"
+#include "taskManager.h"
 
 #define MAX_PRECISION_LEVELS 32
 
@@ -15,6 +17,10 @@ static int visibleBefore, visibleAfter,
 	 processedFrom[MAX_PRECISION_LEVELS],
 	 processedTo[MAX_PRECISION_LEVELS];
 static unsigned char minPrecision, maxPrecision;
+
+
+struct taskInfo task;
+int *taskBarrier;
 
 
 // --- COLORING ---
@@ -104,7 +110,6 @@ static void createColumn(int column, float *logFftResult) {
 		//*/
 		amp     = toLogScale((amp + addedAmp)/2);
 
-
 		toColorScale(amp, &dbuffer(column, i, 0));
 	}
 }
@@ -113,8 +118,13 @@ static void createColumn(int column, float *logFftResult) {
 
 // --- INIT FUNCTIONS ---
 
+static bool taskFunc();
 void dmvInit() {
-	logFftInit();
+	taskBarrier = tmBarrierCreate();
+	tmBarrierPlace(taskBarrier);
+	task.active = false;
+	task.serial = false;
+	tmRegister(&task, taskFunc, 1);
 
 	// colorScale init
 	size_t i=0;
@@ -144,7 +154,6 @@ void dmvInit() {
 static int newColumnLen, newVisibleBefore, newVisibleAfter;
 static double newMinFreq, newMaxFreq, newA1Freq;
 static void onRestart();
-static logFftDataExchangeCallbackT onDataExchange;
 void dmvResize(int columnLen, int visibleBefore, int visibleAfter, double minFreq, double maxFreq, double a1Freq) {
 	dbuffer.dataInvalid = true;
 	newColumnLen = columnLen;
@@ -153,10 +162,11 @@ void dmvResize(int columnLen, int visibleBefore, int visibleAfter, double minFre
 	newMinFreq = minFreq;
 	newMaxFreq = maxFreq;
 	newA1Freq = a1Freq;
-	logFftStop();
+	task.active=false;
+	tmBarrierPlace(taskBarrier);
 }
 void dmvRefresh() {
-	if (logFftIsRunning()) {
+	if (task.active || !tmBarrierReached(taskBarrier)) {
 		if ((processedTo[maxPrecision] < dbuffer.begin) || (processedFrom[maxPrecision] > dbuffer.end)) {
 			int pos = dsPlayerPosToColumn(playerPos);
 			for (unsigned char p = minPrecision; p <= maxPrecision; p++) {
@@ -197,7 +207,7 @@ void dmvRefresh() {
 				processedFrom[p] = dbuffer.begin;
 			}
 		}
-		logFftResume();
+		tmResume();
 	} else {
 		dbufferRealloc(newColumnLen);
 		visibleBefore = newVisibleBefore;
@@ -208,20 +218,18 @@ void dmvRefresh() {
 		}
 
 		dsSetToneScale(newMinFreq, newMaxFreq, newA1Freq);
-		logFftStart(
+		logFftReset(
 				newMinFreq  / 44100.0,
 				newMaxFreq  / 44100.0,
-				newColumnLen, onDataExchange, &minPrecision, &maxPrecision);
+				newColumnLen, &minPrecision, &maxPrecision);
+		task.active=true;
+		tmResume();
 	}
 }
 
 
 // --- DATA PROCESSING ---
 
-struct column {
-	int pos;
-	unsigned char precision;
-};
 
 static inline unsigned char dlog2(unsigned int n) {
 	if (!n) return 0;
@@ -230,9 +238,10 @@ static inline unsigned char dlog2(unsigned int n) {
 	return l;
 }
 
+
 static inline int tryLoadInput(
 		int pos,
-		logFftLoadInputT *loadInput,
+		float *inputBuffer,
 		unsigned char *precisionOut) {
 	if (pos<0) return 0b01; // no previous will be successful
 	int posPlayer = dsColumnToPlayerPos(pos);
@@ -261,14 +270,18 @@ static inline int tryLoadInput(
 	posPlayerTo = posPlayer + (1 << precision);   // exclusive
 	if (dbufferTransactionBegin(pos, precision)) {
 		if (playerBufferWrapBetween(posPlayerFrom, posPlayerTo)) {
-			loadInput(precision, &playerBuffer(posPlayerFrom), playerBuffer.data + PLAYER_BUFFER_SIZE);
-			loadInput(precision, playerBuffer.data, &playerBuffer(posPlayerTo));
+			int sizeToWrap = (playerBuffer.data + PLAYER_BUFFER_SIZE - &playerBuffer(posPlayerFrom));
+			memcpy(inputBuffer, &playerBuffer(posPlayerFrom), sizeToWrap * sizeof(float));
+			memcpy(inputBuffer + sizeToWrap, playerBuffer.data, (posPlayerTo-posPlayerFrom-sizeToWrap) * sizeof(float));
+			//loadInput(precision, &playerBuffer(posPlayerFrom), playerBuffer.data + PLAYER_BUFFER_SIZE);
+			//loadInput(precision, playerBuffer.data, &playerBuffer(posPlayerTo));
 		} else {
-			loadInput(precision, &playerBuffer(posPlayerFrom), &playerBuffer(posPlayerTo));
+			memcpy(inputBuffer, &playerBuffer(posPlayerFrom), (posPlayerTo-posPlayerFrom)*sizeof(float));
+			//loadInput(precision, &playerBuffer(posPlayerFrom), &playerBuffer(posPlayerTo));
 		}
 		if ((playerBuffer.end < posPlayerTo) || (playerBuffer.begin > posPlayerFrom)) {
 			dbufferTransactionAbort(pos);
-			loadInput(0, NULL, NULL);
+			//loadInput(0, NULL, NULL);
 			return 0b11;  // try other
 		}
 		*precisionOut = precision;
@@ -277,30 +290,7 @@ static inline int tryLoadInput(
 	return 0b11; // try other
 }
 
-static bool onDataExchange(
-		void **info,
-		float *resultData,
-		logFftLoadInputT *loadInput) {
-	struct column *column = *info;
-	int pos;
-	if (!column) {
-		column = utilMalloc(sizeof(struct column));
-		column->pos = -1;
-		*info = column;
-		pos=column->pos;
-	} else if (column->pos >= 0) {
-		pos=column->pos;
-		if (resultData) {
-			if (dbufferTransactionCheck(pos)) {
-				createColumn(pos, resultData);
-				dbufferTransactionCommit(pos, column->precision);
-			} else {
-				dbufferTransactionAbort(pos);
-			}
-		} else {
-			dbufferTransactionAbort(pos);
-		}
-	}
+static bool taskFunc() {
 
 	int bufferPos = dsPlayerPosToColumn(playerPos);
 	int visibleTo = bufferPos+visibleAfter;
@@ -309,81 +299,117 @@ static bool onDataExchange(
 	if (visibleFrom < dbuffer.begin) visibleFrom = dbuffer.begin;
 	if (visibleFrom < 0) visibleFrom = 0;
 
-	for (pos = processedTo[maxPrecision]; pos < visibleTo; pos++) {
-		unsigned char p;
-		switch (tryLoadInput(pos, loadInput, &column->precision)) {
-			case 0b00: // success
-				column->pos = pos;
-				return true;
-			case 0b01: // no previous will success
-			case 0b11: // try other
-				p = dbufferPrecision(pos);
-				if (p > maxPrecision) p = maxPrecision;
-				if ((p >= minPrecision) && (processedTo[p] > pos)) pos = processedTo[p]-1;
-				continue;
-			case 0b10: // no further will success
-				pos = INT_MAX-1;
-				break;
+	bool inputLoaded = false;
+	float *inputBuffer = malloc(sizeof(float)*2u<<maxPrecision);
+	int pos;
+	unsigned char precision;
+
+	if (!inputLoaded) {
+		for (pos = processedTo[maxPrecision]; pos < visibleTo; pos++) {
+			unsigned char p;
+			switch (tryLoadInput(pos, inputBuffer, &precision)) {
+				case 0b00: // success
+					inputLoaded = true;
+					break;
+				case 0b01: // no previous will success
+				case 0b11: // try other
+					p = dbufferPrecision(pos);
+					if (p > maxPrecision) p = maxPrecision;
+					if ((p >= minPrecision) && (processedTo[p] > pos)) pos = processedTo[p]-1;
+					continue;
+				case 0b10: // no further will success
+					pos = INT_MAX-1;
+					break;
+			}
+			if (inputLoaded) break;
 		}
 	}
 
-	for (pos = processedFrom[maxPrecision]-1; pos >= visibleFrom; pos--) {
-		unsigned char p;
-		switch (tryLoadInput(pos, loadInput, &column->precision)) {
-			case 0b00: // success
-				column->pos = pos;
-				return true;
-			case 0b10: // no further will success
-			case 0b11: // try other
-				p = dbufferPrecision(pos);
-				if (p > maxPrecision) p = maxPrecision;
-				if ((p >= minPrecision) && (processedFrom[p] < pos)) pos = processedFrom[p]+1;
-				continue;
-			case 0b01: // no previous will success
-				pos = INT_MIN+1;
-				break;
+	if (!inputLoaded) {
+		for (pos = processedFrom[maxPrecision]-1; pos >= visibleFrom; pos--) {
+			unsigned char p;
+			switch (tryLoadInput(pos, inputBuffer, &precision)) {
+				case 0b00: // success
+					inputLoaded = true;
+					break;
+				case 0b10: // no further will success
+				case 0b11: // try other
+					p = dbufferPrecision(pos);
+					if (p > maxPrecision) p = maxPrecision;
+					if ((p >= minPrecision) && (processedFrom[p] < pos)) pos = processedFrom[p]+1;
+					continue;
+				case 0b01: // no previous will success
+					pos = INT_MIN+1;
+					break;
+			}
+			if (inputLoaded) break;
 		}
 	}
 
-	for (pos = (visibleTo>processedTo[maxPrecision] ? visibleTo : processedTo[maxPrecision]); pos < dbuffer.end; pos++) {
-		unsigned char p;
-		switch (tryLoadInput(pos, loadInput, &column->precision)) {
-			case 0b00: // success
-				column->pos = pos;
-				return true;
-			case 0b01: // no previous will success
-			case 0b11: // try other
-				p = dbufferPrecision(pos);
-				if (p > maxPrecision) p = maxPrecision;
-				if ((p >= minPrecision) && (processedTo[p] > pos)) pos = processedTo[p]-1;
-				continue;
-			case 0b10: // no further will success
-				pos = INT_MAX-1;
-				break;
+	if (!inputLoaded) {
+		for (pos = (visibleTo>processedTo[maxPrecision] ? visibleTo : processedTo[maxPrecision]); pos < dbuffer.end; pos++) {
+			unsigned char p;
+			switch (tryLoadInput(pos, inputBuffer, &precision)) {
+				case 0b00: // success
+					inputLoaded = true;
+					break;
+				case 0b01: // no previous will success
+				case 0b11: // try other
+					p = dbufferPrecision(pos);
+					if (p > maxPrecision) p = maxPrecision;
+					if ((p >= minPrecision) && (processedTo[p] > pos)) pos = processedTo[p]-1;
+					continue;
+				case 0b10: // no further will success
+					pos = INT_MAX-1;
+					break;
+			}
+			if (inputLoaded) break;
 		}
 	}
 
-	for (pos = (visibleFrom<processedFrom[maxPrecision] ? visibleFrom : processedFrom[maxPrecision])-1; pos >= dbuffer.begin; pos--) {
-		unsigned char p;
-		switch (tryLoadInput(pos, loadInput, &column->precision)) {
-			case 0b00: // success
-				column->pos = pos;
-				return true;
-			case 0b10: // no further will success
-			case 0b11: // try other
-				p = dbufferPrecision(pos);
-				if (p > maxPrecision) p = maxPrecision;
-				if ((p >= minPrecision) && (processedFrom[p] < pos)) pos = processedFrom[p]+1;
-				continue;
-			case 0b01: // no previous will success
-				pos = INT_MIN+1;
-				break;
+	if (!inputLoaded) {
+		for (pos = (visibleFrom<processedFrom[maxPrecision] ? visibleFrom : processedFrom[maxPrecision])-1; pos >= dbuffer.begin; pos--) {
+			unsigned char p;
+			switch (tryLoadInput(pos, inputBuffer, &precision)) {
+				case 0b00: // success
+					inputLoaded = true;
+					break;
+				case 0b10: // no further will success
+				case 0b11: // try other
+					p = dbufferPrecision(pos);
+					if (p > maxPrecision) p = maxPrecision;
+					if ((p >= minPrecision) && (processedFrom[p] < pos)) pos = processedFrom[p]+1;
+					continue;
+				case 0b01: // no previous will success
+					pos = INT_MIN+1;
+					break;
+			}
+			if (inputLoaded) break;
 		}
 	}
 
-	column->pos = -1;
-	return false;
+	if (!inputLoaded) {
+		free(inputBuffer);
+		return false;
+	}
+
+	float *outputBuffer = malloc(dbuffer.columnLen * sizeof(float));
+
+	logFftProcess(precision, inputBuffer, outputBuffer);
+
+	if (dbufferTransactionCheck(pos)) {
+		createColumn(pos, outputBuffer);
+		dbufferTransactionCommit(pos, precision);
+	} else {
+		dbufferTransactionAbort(pos);
+	}
+
+	free(inputBuffer);
+	free(outputBuffer);
+
+	return true;
 }
+
 
 /*
 void drawerAddColumns(float *buff, size_t columns, size_t drawingOffset) { // column-oriented
