@@ -1,4 +1,4 @@
-// MusA  Copyright (C) 2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+// MusA  Copyright (C) 2016--2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
 #ifndef FFT_H
 #define FFT_H

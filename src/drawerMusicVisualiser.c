@@ -1,4 +1,4 @@
-// MusA  Copyright (C) 2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+// MusA  Copyright (C) 2016--2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
 #include <math.h>
 #include <float.h>
@@ -10,6 +10,7 @@
 #include "player.h"
 #include "util.h"
 #include "taskManager.h"
+#include "messages.h"
 
 #define MAX_PRECISION_LEVELS 32
 
@@ -19,8 +20,7 @@ static int visibleBefore, visibleAfter,
 static unsigned char minPrecision, maxPrecision;
 
 
-struct taskInfo task;
-int *taskBarrier;
+struct taskInfo dmvTask = TM_TASK_INITIALIZER(false, false);
 
 
 // --- COLORING ---
@@ -120,11 +120,7 @@ static void createColumn(int column, float *logFftResult) {
 
 static bool taskFunc();
 void dmvInit() {
-	taskBarrier = tmBarrierCreate();
-	tmBarrierPlace(taskBarrier);
-	task.active = false;
-	task.serial = false;
-	tmRegister(&task, taskFunc, 1);
+	tmTaskRegister(&dmvTask, taskFunc, 1);
 
 	// colorScale init
 	size_t i=0;
@@ -151,80 +147,73 @@ void dmvInit() {
 }
 
 
-static int newColumnLen, newVisibleBefore, newVisibleAfter;
-static double newMinFreq, newMaxFreq, newA1Freq;
 static void onRestart();
-void dmvResize(int columnLen, int visibleBefore, int visibleAfter, double minFreq, double maxFreq, double a1Freq) {
-	dbuffer.dataInvalid = true;
-	newColumnLen = columnLen;
-	newVisibleBefore = visibleBefore;
-	newVisibleAfter  = visibleAfter;
-	newMinFreq = minFreq;
-	newMaxFreq = maxFreq;
-	newA1Freq = a1Freq;
-	task.active=false;
-	tmBarrierPlace(taskBarrier);
-}
-void dmvRefresh() {
-	if (task.active || !tmBarrierReached(taskBarrier)) {
-		if ((processedTo[maxPrecision] < dbuffer.begin) || (processedFrom[maxPrecision] > dbuffer.end)) {
-			int pos = dsPlayerPosToColumn(playerPos);
-			for (unsigned char p = minPrecision; p <= maxPrecision; p++) {
-				processedTo[p] = processedFrom[p] = pos;
-			}
-		} else {
-			unsigned char p = maxPrecision;
-			while (true) {
-				unsigned char p2 = dbufferPrecision(processedTo[p]);
-				if ((processedTo[p] >= dbuffer.end) || (dbufferState(processedTo[p]) < DBUFF_READY)) p2 = 0;
-				while ((p > p2) && (p > minPrecision)) {
-					if (processedTo[p-1] < processedTo[p]) {
-						processedTo[p-1] = processedTo[p];
-					}
-					p--;
-				}
-				if (p2 < minPrecision) break;
-				processedTo[p]++;
-			}
-			for (p = minPrecision; (p <= maxPrecision) && (processedTo[p] > dbuffer.end); p++) {
-				processedTo[p] = dbuffer.end;
-			}
 
-			p = maxPrecision;
-			while (true) {
-				unsigned char p2 = dbufferPrecision(processedFrom[p]-1);
-				if ((processedFrom[p] <= dbuffer.begin) || (dbufferState(processedFrom[p]-1) < DBUFF_READY)) p2 = 0;
-				while ((p > p2) && (p > minPrecision)) {
-					if (processedFrom[p-1] > processedFrom[p]) {
-						processedFrom[p-1] = processedFrom[p];
-					}
-					p--;
-				}
-				if (p2 < minPrecision) break;
-				processedFrom[p]--;
-			}
-			for (p = minPrecision; (p <= maxPrecision) && (processedTo[p] < dbuffer.begin); p++) {
-				processedFrom[p] = dbuffer.begin;
-			}
-		}
-		tmResume();
-	} else {
-		dbufferRealloc(newColumnLen);
-		visibleBefore = newVisibleBefore;
-		visibleAfter = newVisibleAfter;
-		int pos = dsPlayerPosToColumn(playerPos);
-		for (int i=0; i<MAX_PRECISION_LEVELS; i++) {
-			processedTo[i] = processedFrom[i] = pos;
-		}
-
-		dsSetToneScale(newMinFreq, newMaxFreq, newA1Freq);
-		logFftReset(
-				newMinFreq  / 44100.0,
-				newMaxFreq  / 44100.0,
-				newColumnLen, &minPrecision, &maxPrecision);
-		task.active=true;
-		tmResume();
+//void dmvResize(int columnLen, int visibleBefore, int visibleAfter, double minFreq, double maxFreq, double a1Freq) {
+void dmvReset() { // pause dmvTask and drawerMainTask before
+	if ((msgOption_columnLen<=0) || (msgOption_minFreq > msgOption_maxFreq)) { // XXX check elsewhere
+		dmvTask.active = false;
+		return;
 	}
+	dbufferRealloc(msgOption_columnLen);
+	visibleBefore = msgOption_visibleBefore;
+	visibleAfter = msgOption_visibleAfter;
+	int pos = dsPlayerPosToColumn(playerPos);
+	for (int i=0; i<MAX_PRECISION_LEVELS; i++) {
+		processedTo[i] = processedFrom[i] = pos;
+	}
+
+	dsSetToneScale(msgOption_minFreq, msgOption_maxFreq, msgOption_a1Freq);
+	logFftReset(
+			msgOption_minFreq  / 44100.0,
+			msgOption_maxFreq  / 44100.0,
+			msgOption_columnLen, &minPrecision, &maxPrecision);
+	dmvTask.active = true;
+}
+
+void dmvRefresh() {
+	if (!tmTaskEnter(&dmvTask)) return;
+	if ((processedTo[maxPrecision] < dbuffer.begin) || (processedFrom[maxPrecision] > dbuffer.end)) {
+		int pos = dsPlayerPosToColumn(playerPos);
+		for (unsigned char p = minPrecision; p <= maxPrecision; p++) {
+			processedTo[p] = processedFrom[p] = pos;
+		}
+	} else {
+		unsigned char p = maxPrecision;
+		while (true) {
+			unsigned char p2 = dbufferPrecision(processedTo[p]);
+			if ((processedTo[p] >= dbuffer.end) || (dbufferState(processedTo[p]) < DBUFF_READY)) p2 = 0;
+			while ((p > p2) && (p > minPrecision)) {
+				if (processedTo[p-1] < processedTo[p]) {
+					processedTo[p-1] = processedTo[p];
+				}
+				p--;
+			}
+			if (p2 < minPrecision) break;
+			processedTo[p]++;
+		}
+		for (p = minPrecision; (p <= maxPrecision) && (processedTo[p] > dbuffer.end); p++) {
+			processedTo[p] = dbuffer.end;
+		}
+
+		p = maxPrecision;
+		while (true) {
+			unsigned char p2 = dbufferPrecision(processedFrom[p]-1);
+			if ((processedFrom[p] <= dbuffer.begin) || (dbufferState(processedFrom[p]-1) < DBUFF_READY)) p2 = 0;
+			while ((p > p2) && (p > minPrecision)) {
+				if (processedFrom[p-1] > processedFrom[p]) {
+					processedFrom[p-1] = processedFrom[p];
+				}
+				p--;
+			}
+			if (p2 < minPrecision) break;
+			processedFrom[p]--;
+		}
+		for (p = minPrecision; (p <= maxPrecision) && (processedTo[p] < dbuffer.begin); p++) {
+			processedFrom[p] = dbuffer.begin;
+		}
+	}
+	tmTaskLeave(&dmvTask);
 }
 
 

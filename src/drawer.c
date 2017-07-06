@@ -1,29 +1,45 @@
-// MusA  Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
+// MusA  Copyright (C) 2016--2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
-#include<stdlib.h>
-#include<stdbool.h>
-#include<math.h>
-#include<stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
 
-#include<GL/freeglut.h>
-#include<GL/gl.h>
+#include <GL/freeglut.h>
+#include <GL/gl.h>
 
 #include "player.h"
 #include "drawerBuffer.h"
 #include "drawerMusicVisualiser.h"
 #include "drawerScale.h"
 #include "drawer.h"
+#include "consoleIn.h"
+#include "consoleOut.h"
 
-static size_t width, height, rowSize;
+#include "util.h"
+#include "taskManager.h"
+#include "messages.h"
+
+struct taskInfo drawerMainTask    = TM_TASK_INITIALIZER(true, true);
+struct taskInfo drawerConsoleTask = TM_TASK_INITIALIZER(true, true);
+
+
+static size_t width, height;
 static size_t rowBegin=0;
 static size_t newColumns=0;
 static size_t inputColumnLen=1;
 static size_t inputColumnLenToDraw=1;
 
+static GLfloat stringColor[]      = {1.0f,  1.0f, 1.0f};
+static GLfloat stringColorRed[]   = {1.0f,  0.3f, 0.3f};
+static GLfloat stringColorGreen[] = {0.05f, 0.9f, 0.05f};
+static GLfloat stringColorBlue[]  = {0.5f,  0.5f, 1.0f};
+static GLfloat stringColorGray[]  = {0.5f,  0.5f, 0.5f};
+
 float keyboardMinFreq;
 unsigned keyboardMinTone;
 double centeredRatio;
-double minFreq, maxFreq, a1Freq;
 
 #define SCALE_LINES_ALPHA_MAIN 0.5
 #define SCALE_LINES_ALPHA_OTHER 0.3
@@ -38,20 +54,16 @@ static void onReshape(int w, int h);
 static void onDisplay();
 
 void drawerInit(
-	double columnsPerSecond, double unplayedPerc,
-	double minFrequency, double maxFrequency, double a1Frequency) {
+	double columnsPerSecond, double unplayedPerc) {
 	dbufferColumnsPerSecond = columnsPerSecond;
 
 	dsSetTimeScale(playerSampleRate, columnsPerSecond);
 
 	centeredRatio = 1-unplayedPerc/100;
-	minFreq=minFrequency;
-	maxFreq=maxFrequency;
-	a1Freq=a1Frequency;
 
 	dbufferInit();
 	dbufferMove(DRAWER_BUFFER_SIZE/2);
-	
+
 	dmvInit();
 
 	glutReshapeFunc(onReshape);
@@ -62,24 +74,182 @@ void drawerInit(
 
 // --- DRAWING ---
 
+bool drawOnlyControls = false;
+bool forceMain = false;
+bool forceNext = false;
+
+// -- controls --
+
+static void drawRect(int x1, int y1, int x2, int y2);
+static void drawString(char *string, int x, int y);
+static struct utilStrList *drawStringMultiline(struct utilStrList *lines, int count, int x, int y);
+//static void drawBlock();
+static void drawStatusLine();
+
+static void drawRect(int x1, int y1, int x2, int y2) {
+	glBegin(GL_QUADS);
+	glVertex2i(x1, y1);
+	glVertex2i(x1, y2);
+	glVertex2i(x2, y2);
+	glVertex2i(x2, y1);
+	glEnd();
+}
+
+static void drawString(char *str, int x, int y) {
+	//GLfloat color[4];
+	//glGetFloatv(GL_CURRENT_COLOR, color);
+
+	//glColor4f(0, 0, 0, 0.8);
+	//drawRect(x-1, y-5, x+consoleStrWidth(str)*9+1, y+14);
+	//glColor3fv(color);
+	glRasterPos2i(x, y);
+
+
+	while (*str) {
+		switch (*str) {
+			case consoleSpecialBack:
+				x-=9;
+				glRasterPos2i(x, y);
+				break;
+			case consoleSpecialColorNormal:
+				glColor3fv(stringColor);
+				glRasterPos2i(x, y);
+				break;
+			case consoleSpecialColorRed:
+				glColor3fv(stringColorRed);
+				glRasterPos2i(x, y);
+				break;
+			case consoleSpecialColorGreen:
+				glColor3fv(stringColorGreen);
+				glRasterPos2i(x, y);
+				break;
+			case consoleSpecialColorBlue:
+				glColor3fv(stringColorBlue);
+				glRasterPos2i(x, y);
+				break;
+			case consoleSpecialColorGray:
+				glColor3fv(stringColorGray);
+				glRasterPos2i(x, y);
+				break;
+				break;
+			default:
+				x+=9;
+				glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *str);
+				break;
+		}
+		str++;
+	}
+}
+
+static struct utilStrList *drawStringMultiline(struct utilStrList *lines, int count, int x, int y) {
+	int i;
+	for (i=0; lines && (!count || i<count); i++, lines=lines->next) {
+		drawString(lines->str, x, y);
+		y-=19;
+	}
+	return lines;
+}
+/*
+static void drawBlock() {
+	int x, y;
+	struct utilStrList *list=0;
+	if (!consoleBlock)
+		return;
+	x=(width-consoleBlockWidth*9)/2;
+	y=(height+consoleBlockHeight*19)/2-10;
+
+	if ((x<0) || (y>height-10-19)) {
+		glColor3fv(stringColorRed);
+		utilStrListAddAfter(&list);
+		utilStrRealloc(&list->str, 0, 20);
+		strcpy(list->str, "Too small window");
+		utilStrListAddAfter(&list);
+		utilStrRealloc(&list->str, 0, 20);
+		sprintf(list->str, "%dx%d needed", consoleBlockWidth*9, consoleBlockHeight*19+2*19);
+		utilStrListAddAfter(&list);
+		utilStrRealloc(&list->str, 0, 20);
+		sprintf(list->str, "current: %dx%d", width, height);
+		list=list->prev;
+		list=list->prev;
+		x=(width>17*9?(width-17*9)/2:0);
+		y=(height>3*19?(height+3*19)/2:height)-12;
+		drawStringMultiline(list, 0, x, y);
+		while (list)
+			utilStrListRm(&list);
+	} else {
+		glColor3fv(stringColor);
+		drawStringMultiline(consoleBlock, 0, x, y);
+	}
+}
+*/
+
+static void drawLogo() { // TODO create logo
+	glColor4f(0, 0, 0, 1);
+	drawRect(0, 0, width, height);
+}
+
+static void drawStatusLine() {
+	int consoleSize=0, count=0;
+	struct utilStrList *lines=NULL;
+
+	if ((lines=consoleLines)) {
+		consoleSize=consoleStrWidth(lines->str);
+		count=1;
+		while (lines->prev) {
+			count++;
+			lines=lines->prev;
+		}
+	}
+	if (consoleIsOpen()) count++;
+
+	glColor4f(0, 0, 0, 1);
+	if (count>1) {
+		drawRect(0, 0, width, 20*count);
+		drawOnlyControls = true;
+	} else {
+		drawRect(0, 0, width, 20);
+		forceMain |= drawOnlyControls;
+		drawOnlyControls = false;
+	}
+
+	glColor3fv(stringColor);
+	if (lines) {
+		drawStringMultiline(lines, 0, 1, 19*count-14);
+	}
+	if (consoleIsOpen()) {
+		int lineSize = consoleStrWidth(consoleInputLine);
+		if (lineSize>consoleSize) consoleSize = lineSize;
+		drawString(consoleInputLine, 1, 5);
+	}
+
+	glColor3fv(stringColorGreen);
+	if (9*(strlen(consoleStatus)+consoleSize+3)<=width)
+		drawString(consoleStatus, width-9*strlen(consoleStatus)-10, 5);
+	else if (!consoleLines)
+		drawString(consoleStatus, 10, 5);
+
+}
+
+// -- rest --
+
 int drawerBufferPos=0;
 int screenCenterColumn=0;
 
 static inline void drawColumnColors(int screenColumn, unsigned char *colors) {
-	glRasterPos2i(screenColumn,0);
-	glDrawPixels(1, height, GL_RGB, GL_UNSIGNED_BYTE, colors);
+	glRasterPos2i(screenColumn,20);
+	glDrawPixels(1, height-20, GL_RGB, GL_UNSIGNED_BYTE, colors);
 }
 static inline void drawColumnColor(int screenColumn, GLbyte *color) {
 	glColor3ubv(color);
 	glLineWidth(1);
 	glBegin(GL_LINES);
-	glVertex2i(screenColumn, 0);
+	glVertex2i(screenColumn, 20);
 	glVertex2i(screenColumn, height);
 	glEnd();
 }
 static inline void drawColumnOverlay(int screenColumn, GLbyte *colorsA) {
-	glRasterPos2i(screenColumn,0);
-	glDrawPixels(1, height, GL_RGBA, GL_UNSIGNED_BYTE, colorsA);
+	glRasterPos2i(screenColumn,20);
+	glDrawPixels(1, height-20, GL_RGBA, GL_UNSIGNED_BYTE, colorsA);
 }
 static inline void drawColumn(int screenColumn, bool previewOnly) {
 	int column = screenColumn - screenCenterColumn + drawerBufferPos;
@@ -117,94 +287,58 @@ static inline void moveColumns(int offset) {
 	} else {
 		cnt  = width + offset; from = 0; to = -offset;
 	}
-	glRasterPos2i(to, 0);
-	glCopyPixels(from, 0, cnt, height, GL_COLOR);
+	glRasterPos2i(to, 20);
+	glCopyPixels(from, 20, cnt, height-20, GL_COLOR);
 }
 
 // Draws the view, possibly moving some area (if not forced)
 static void repaint(bool force) {
-	static int oldBufferPos=0;
-	int offset=drawerBufferPos-oldBufferPos;
-	if (offset > 0) {
-		for (int i = width-offset+oldBufferPos-screenCenterColumn; i<width+oldBufferPos-screenCenterColumn; i++) {
-			dbufferDrawn(i) = false;
-		}
-	} else {
-		for (int i = oldBufferPos-screenCenterColumn; i<offset+oldBufferPos-screenCenterColumn; i++) {
-			dbufferDrawn(i) = false;
-		}
-	}
-	if (!force && (abs(offset) < width)) {
-		moveColumns(offset);
+
+	{ bool tmp;
+		tmp = forceNext;
+		forceNext = force;
+		force |= tmp;
 	}
 
-	for (int i=0; i<width; i++) {
-		if (!dbufferDrawn(i+drawerBufferPos-screenCenterColumn)) {
-			drawColumn(i, force);
-		}
+	if (force && drawOnlyControls) {
+		drawLogo();
 	}
 
-	oldBufferPos = drawerBufferPos;
+	if (tmTaskEnter(&drawerConsoleTask)) {
+		drawStatusLine();
+		tmTaskLeave(&drawerConsoleTask);
+	}
 
+	force |= forceMain;
+	forceMain = false;
 
-	/*
-	static int leftForcedColumns=0;
-	if (!force && !newColumns)
-		return;
-
-	//glClear(GL_COLOR_BUFFER_BIT);
-	int x=0;
-	glRasterPos2i(0,0);
-	if (!force && (newColumns<width)) {
-		// redraw forced left columns
-		leftForcedColumns-=newColumns;
-		if (leftForcedColumns>0) {
-			glPixelStoref(GL_UNPACK_SKIP_PIXELS, rowBegin);
-			if (width-rowBegin>=leftForcedColumns) {
-				glDrawPixels(leftForcedColumns, height, GL_RGB, GL_UNSIGNED_BYTE, buffer);
-			} else {
-				glDrawPixels(width-rowBegin, height, GL_RGB, GL_UNSIGNED_BYTE, buffer);
-				glRasterPos2i(width-rowBegin, 0);
-				glPixelStoref(GL_UNPACK_SKIP_PIXELS, 0);
-				glDrawPixels(leftForcedColumns-(width-rowBegin), height, GL_RGB, GL_UNSIGNED_BYTE, buffer);
+	if (!drawOnlyControls && tmTaskEnter(&drawerMainTask)) {
+		static int oldBufferPos=0;
+		int offset=drawerBufferPos-oldBufferPos;
+		if (offset > 0) {
+			for (int i = width-offset+oldBufferPos-screenCenterColumn; i<width+oldBufferPos-screenCenterColumn; i++) {
+				dbufferDrawn(i) = false;
 			}
-			x=leftForcedColumns;
-			glRasterPos2i(x,0);
-			leftForcedColumns=0;
+		} else {
+			for (int i = oldBufferPos-screenCenterColumn; i<offset+oldBufferPos-screenCenterColumn; i++) {
+				dbufferDrawn(i) = false;
+			}
+		}
+		if (!force && (abs(offset) < width)) {
+			moveColumns(offset);
 		}
 
-		// move valid rectangle in graphic card
-		glCopyPixels(newColumns+x,0,width-newColumns-x,height,GL_COLOR);
-		x=width-newColumns;
-		glRasterPos2i(x,0);
-	}
-
-	if (rowBegin+x<width) {
-		// draw necessary part from rowBegin to end of buffer
-		glPixelStoref(GL_UNPACK_SKIP_PIXELS,rowBegin+x);
-		glDrawPixels(width-rowBegin-x,height,GL_RGB,GL_UNSIGNED_BYTE,buffer);
-		glRasterPos2i(width-rowBegin,0);
-		x=0;
-	} else
-		x-=width-rowBegin;
-
-	// draw necessary part from the begining of buffer to rowBegin
-	glPixelStoref(GL_UNPACK_SKIP_PIXELS,x);
-	glDrawPixels(rowBegin-x,height,GL_RGB,GL_UNSIGNED_BYTE,buffer);
-
-
-	// draw labels
-	glColor3f(0.0f,1.0f,0.0f);
-	GLint rasterPos[4];
-	for (size_t i=0; i<scaleLabelsCnt; i++) {
-		glRasterPos2i(5, scaleLabels[i].pos-3*!drawScaleLines);
-		glutBitmapString(SCALE_LABELS_FONT, (unsigned char*)scaleLabels[i].label);
-		glGetIntegerv(GL_CURRENT_RASTER_POSITION, rasterPos);
-		if (leftForcedColumns<rasterPos[0]) {
-			leftForcedColumns=rasterPos[0];
+		for (int i=0; i<width; i++) {
+			if (force || !dbufferDrawn(i+drawerBufferPos-screenCenterColumn)) {
+				drawColumn(i, false);
+			}
 		}
+
+		oldBufferPos = drawerBufferPos;
+		tmTaskLeave(&drawerMainTask);
+	} else {
+		forceMain |= force;
 	}
-	*/
 
 	glFlush();
 	glutSwapBuffers();
@@ -219,6 +353,7 @@ static void onTimer() {
 		dbufferMove(newPos-drawerBufferPos);
 		drawerBufferPos = newPos;
 		dmvRefresh();
+		tmResume();
 		repaint(false);
 	}
 	glutTimerFunc(DRAWER_FRAME_DELAY, onTimer, 0);
@@ -228,13 +363,16 @@ static void onReshape(int w, int h) {
 	width=w;
 	height=h;
 	screenCenterColumn=w*centeredRatio;
+
 	glViewport(0, 0, w, h);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	glOrtho(0, w, 0, h, -1, 1);
 	glMatrixMode(GL_MODELVIEW); glLoadIdentity(); glTranslatef(0.375, 0.375, 0.);
-	dmvResize(h, screenCenterColumn, w-screenCenterColumn,
-			minFreq, maxFreq, a1Freq);
+
+	msgSet_columnLen(h-20);
+	msgSet_visibleBefore(screenCenterColumn);
+	msgSet_visibleAfter(w-screenCenterColumn);
 
 	glReadBuffer(GL_FRONT);
 	glDrawBuffer(GL_BACK);

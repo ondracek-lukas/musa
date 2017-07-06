@@ -13,7 +13,7 @@ void dbufferInit() {
 	dbuffer.end=0;
 	dbuffer.dataInvalid=true;
 }
-void dbufferRealloc(size_t columnLen) { // to be called only when all threads are aware of dataInvalid=true
+void dbufferRealloc(size_t columnLen) {
 	dbuffer.columnLen=columnLen;
 	free(dbuffer.data);
 	dbuffer.data = calloc(columnLen*DRAWER_BUFFER_SIZE*3, sizeof(unsigned char));

@@ -21,7 +21,6 @@ unsigned workersCnt;
 static struct workerInfo {
 	unsigned id;
 	pthread_t threadID;
-	int counter;
 	bool sleeping;
 #ifdef TM_PROFILER
 	struct {
@@ -100,7 +99,6 @@ static __attribute__((constructor)) void init() {
 	workers=utilMalloc(sizeof(struct workerInfo)*workersCnt);
 	for (size_t i=0; i<workersCnt; i++) {
 		workers[i].id=i;
-		workers[i].counter=0;
 		workers[i].sleeping=false;
 		pthread_create(&workers[i].threadID, NULL, (void*(*)(void*))worker, workers+i);
 	}
@@ -177,8 +175,7 @@ struct taskHandler {
 	struct taskHandler *next;
 } *tasks = NULL;
 
-void tmRegister(struct taskInfo *task, bool(*func)(), int priority) {
-	task -> running = 0;
+void tmTaskRegister(struct taskInfo *task, bool(*func)(), int priority) {
 	struct taskHandler *handler = malloc(sizeof(struct taskHandler));
 	handler -> task = task;
 	handler -> func = func;
@@ -189,28 +186,8 @@ void tmRegister(struct taskInfo *task, bool(*func)(), int priority) {
 	*ph = handler;
 }
 
-int *tmBarrierCreate() {
-	return malloc(sizeof(int) * workersCnt);
-}
-void tmBarrierPlace(int *barrier) {
-	__sync_synchronize();
-	for (int i = 0; i < workersCnt; i++) {
-		barrier[i] = workers[i].counter;
-	}
-}
-bool tmBarrierReached(int *barrier) {
-	for (int i = 0; i < workersCnt; i++) {
-		if ((workers[i].counter - barrier[i] <= 0) && (!workers[i].sleeping)) {
-			return false;
-		}
-	}
-	__sync_synchronize();
-	return true;
-}
-void tmBarrierFree(int *barrier) {
-	free(barrier);
-}
-
+bool tmTaskEnter(struct taskInfo *task);
+void tmTaskLeave(struct taskInfo *task);
 
 static void *worker(struct workerInfo *info) {
 	LOG("Worker %d started...\n", info->id);
@@ -218,8 +195,6 @@ static void *worker(struct workerInfo *info) {
 	
 	bool allDone = true;
 	while (true) {
-
-		info->counter++;
 
 		if (allDone || stopRequested) {
 			pthread_mutex_lock(&mutex);
@@ -239,23 +214,16 @@ static void *worker(struct workerInfo *info) {
 				break;
 			}
 			allDone = false;
-			info->counter++;
 		}
 
 		struct taskHandler *t = tasks;
 		for (; t; t = t->next) {
-			if (t->task->active) {
-				if (t->task->serial) {
-					if (!__sync_bool_compare_and_swap(&t->task->running, 0, 1)) continue;
-				} else {
-					__sync_fetch_and_add(&t->task->running, 1);
-				}
-				PROF_TASK_BEGIN;
-				bool r = t->func();
-				PROF_TASK_END(t->priority, r);
-				__sync_fetch_and_sub(&t->task->running, 1);
-				if (r) break;
-			}
+			if (!tmTaskEnter(t->task)) continue;
+			PROF_TASK_BEGIN;
+			bool r = t->func();
+			PROF_TASK_END(t->priority, r);
+			tmTaskLeave(t->task);
+			if (r) break;
 		}
 		
 		if (t) {

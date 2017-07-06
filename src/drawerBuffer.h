@@ -38,7 +38,7 @@ extern double dbufferColumnsPerSecond;
 
 
 void dbufferInit();
-void dbufferRealloc(size_t columnLen); // to be called only when all threads are aware of dataInvalid=true
+void dbufferRealloc(size_t columnLen); // buffer cannot be accessed during call
 void dbufferMove(int offset); // to be called only from the main thread
 
 static inline bool dbufferTransactionBegin(int column, unsigned char precision) { // returns whether transaction was started
