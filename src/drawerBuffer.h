@@ -17,19 +17,13 @@ struct dbufferS {
 	bool drawn[DRAWER_BUFFER_SIZE];
 	bool dataInvalid;
 	unsigned char *data;
-	bool previewCreated[DRAWER_BUFFER_SIZE];
-	unsigned char preview[DRAWER_BUFFER_SIZE*3];
 	unsigned char *columnOverlay;
 };
 
 extern struct dbufferS dbuffer;
 
-extern double dbufferColumnsPerSecond;
-
 #define dbufferColToI(column) (((column) + DRAWER_BUFFER_SIZE) % DRAWER_BUFFER_SIZE)
 #define dbuffer(column,pixel,channel) dbuffer.data[(dbufferColToI(column) * dbuffer.columnLen + (pixel)) * 3 + (channel)]
-#define dbufferPreview(column,channel) dbuffer.preview[dbufferColToI(column) * 3 + (channel)]
-#define dbufferPreviewCreated(column) dbuffer.previewCreated[dbufferColToI(column)]
 #define dbufferState(column) dbuffer.state[dbufferColToI(column)]
 #define dbufferPrecision(column) dbuffer.precision[dbufferColToI(column)]
 #define dbufferDrawn(column) dbuffer.drawn[dbufferColToI(column)]
@@ -61,8 +55,8 @@ static inline bool dbufferTransactionCheck(int column) { // checks whether trans
 }
 static inline bool dbufferTransactionCommit(int column, unsigned char precision) { // tries to commit active transaction
 	// state is now DBUFF_PROCESSING or DBUFF_INVALID, column exists
+	dbufferPrecision(column) = precision;
 	if (__sync_bool_compare_and_swap(&dbufferState(column), DBUFF_PROCESSING, DBUFF_READY)) {
-		dbufferPrecision(column) = precision;
 		dbufferDrawn(column) = false;
 		return true;
 	} else {

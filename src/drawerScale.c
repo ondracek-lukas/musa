@@ -1,13 +1,19 @@
 // MusA  Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
 #include <math.h>
+#include "player.h"
+#include "messages.h"
 #include "drawerScale.h"
 #include "drawerBuffer.h"
 #include "util.h"
 
-double dsColumnToPlayerPosMultiplier;
+double dsColumnToPlayerPosMultiplier=1;
 
-double dsMinFreq, dsMaxFreq, dsA1Freq;
+void dsResetTimeScale() {
+	dsColumnToPlayerPosMultiplier = playerSampleRate / msgOption_outputRate;
+}
+
+
 double dsOctaveOffset, dsSemitoneOffset, dsA1Index;
 
 const bool isKeyWhite[] = {1,0,1,0,1, 1,0,1,0,1,0,1}; // 9 ~ A
@@ -22,13 +28,10 @@ static inline void setColumnOverlayColor(int index, unsigned char r, unsigned ch
 	}
 }
 
-extern void dsSetToneScale(double minFreq, double maxFreq, double a1Freq) {
-	dsMinFreq = minFreq;
-	dsMaxFreq = maxFreq;
-	dsA1Freq  = a1Freq;
-	dsOctaveOffset = dbuffer.columnLen / log2(dsMaxFreq/dsMinFreq);
+extern void dsResetToneScale() {
+	dsOctaveOffset = dbuffer.columnLen / log2(msgOption_maxFreq/msgOption_minFreq);
 	dsSemitoneOffset = dsOctaveOffset / 12;
-	dsA1Index = 12*log2(dsA1Freq/dsMinFreq) * dsSemitoneOffset;
+	dsA1Index = 12*log2(msgOption_a1Freq/msgOption_minFreq) * dsSemitoneOffset;
 
 	double toneRadius = dsSemitoneOffset/2 - 2;
 	if (toneRadius > 10) toneRadius = 10;
@@ -50,6 +53,7 @@ extern void dsSetToneScale(double minFreq, double maxFreq, double a1Freq) {
 		dsOvertones[i].offset = offset;
 		dsOvertones[i].offsetFract = offset - dsOvertones[i].offset;
 	}
+
 }
 
 // --- SCALE CONVERSION ---
@@ -58,18 +62,18 @@ extern void dsSetToneScale(double minFreq, double maxFreq, double a1Freq) {
 static double scaleFreqToPosMultiplier;
 static inline double scaleFreqToPos(double freq) {
 	// scaleFreqToPosMultiplier=(double)height/log(scaleMaxFreq/scaleMinFreq);
-	return log(freq/dsMinFreq)*scaleFreqToPosMultiplier;
+	return log(freq/msgOption_minFreq)*scaleFreqToPosMultiplier;
 }
 static double scalePosToInputIndexMultiplier;
 static double *scalePosToInputIndexCache=0;
 #define scalePosToInputIndex(pos) scalePosToInputIndexCache[pos]
 static inline double scalePosToInputIndexUncached(double pos) {
 	// scalePosToInputIndexMultiplier=scaleMinFreq/(scaleMaxFreq-scaleMinFreq)*(inputColumnLenToDraw-1);
-	return (pow(dsMaxFreq/dsMinFreq,pos/height)-1)*scalePosToInputIndexMultiplier;
+	return (pow(msgOption_maxFreq/msgOption_minFreq,pos/height)-1)*scalePosToInputIndexMultiplier;
 }
 
 static inline double scaleFreqToInputIndex(double freq) {
-	return (freq-scaleMinFreq)/(dsMaxFreq-dsMinFreq)*(inputColumnLenToDraw-1);
+	return (freq-scaleMinFreq)/(msgOption_maxFreq-msgOption_minFreq)*(inputColumnLenToDraw-1);
 }
 static inline double scaleInputIndexToFreq(double index) {
 	return index/(inputColumnLenToDraw-1)*(scaleMaxFreq-scaleMinFreq)+scaleMinFreq;
@@ -79,16 +83,7 @@ static inline double scaleInputIndexToFreq(double index) {
 */
 // --- SCALE LABELS ---
 
-/*
-struct scaleLabels {
-	size_t pos;
-	bool main;
-	char label[32];
-} *scaleLabels=NULL;
-size_t scaleLabelsCnt=0;
-
-
-static void getToneName(char *name, int a1offset) {
+void dsGetToneName(char *name, int a1offset) {
 	int octave, tone=a1offset+21; // c offset
 	char *toneName;
 	if (tone>=0) {
@@ -109,6 +104,18 @@ static void getToneName(char *name, int a1offset) {
 			sprintf(name, "%s", toneName);
 	}
 }
+double dsFreqToTone(double freq) {
+	return log2(freq/msgOption_a1Freq)*12;
+}
+
+/*
+struct scaleLabels {
+	size_t pos;
+	bool main;
+	char label[32];
+} *scaleLabels=NULL;
+size_t scaleLabelsCnt=0;
+
 
 static void calcScaleLabels() {
 	if (!height)

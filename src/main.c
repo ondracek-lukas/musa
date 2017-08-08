@@ -23,8 +23,6 @@ void mainExit() {
 
 int main(int argc, char **argv){
 	double sampleRate=0;
-	double outputRate=100;
-	float unplayedPerc = 0;
 
 	char c;
 	bool showHelp=false;
@@ -36,12 +34,6 @@ int main(int argc, char **argv){
 			case 'i':
 				sampleRate=strtof(optarg, &optarg);
 				if (*optarg) showHelp=true;
-				break;
-			case 'c':
-				if (sscanf(optarg, "%lf", &outputRate, &c) != 1) showHelp=true;
-				break;
-			case 'u':
-				if (sscanf(optarg, "%f", &unplayedPerc, &c) != 1) showHelp=true;
 				break;
 			case '-':
 				{
@@ -79,26 +71,17 @@ int main(int argc, char **argv){
 	}
 
 	// check values
-	if (outputRate<0) {
-		printf("Wrong output rate.\n");
-		exit(1);
-	}
 	if (sampleRate<0) {
 		printf("Wrong sampling rate.\n");
 		exit(1);
 	}
-	if ((unplayedPerc>100) || (unplayedPerc<0)) {
-		printf("Wrong unplayed ratio.\n");
-		exit(1);
-	}
-
 
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE);
 	glutCreateWindow("MusA (musical analyser)");
 
 	playerUseFDQuiet(stdin, sampleRate);
-	drawerInit(outputRate, unplayedPerc);
+	drawerInit();
 	hidInit();
 
 	glutMainLoop();

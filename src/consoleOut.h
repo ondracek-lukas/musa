@@ -29,9 +29,6 @@ extern void consolePrintBlock(char *str);
 extern void consoleClearBlock();
 */
 
-// Changes status line, invokes redisplay only if really changed.
-extern void consolePrintStatus(char *string);
-
 // Prints list of lines.
 extern void consolePrintLinesList(struct utilStrList *lines);
 
@@ -54,7 +51,6 @@ extern void consoleClearAfterCmdDefaultMsg();
 
 
 // drawer interface, read-only, use under drawerConsoleTask.
-extern char *consoleStatus;
 extern struct utilStrList *consoleLines;
 extern struct utilStrList *consoleBlock;
 extern int consoleBlockWidth;

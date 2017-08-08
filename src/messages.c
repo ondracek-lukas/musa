@@ -85,6 +85,7 @@ void *msgPackArgs(enum msgDataType *types, void **argsArr) {
 	void **arg = argsArr;
 	for (enum msgDataType *t = types; *t; t++, arg++) {
 		switch (*t) {
+			case MSG_BOOL:   size += sizeof(bool);   break;
 			case MSG_INT:    size += sizeof(int);    break;
 			case MSG_FLOAT:  size += sizeof(float);  break;
 			case MSG_DOUBLE: size += sizeof(double); break;
@@ -98,6 +99,10 @@ void *msgPackArgs(enum msgDataType *types, void **argsArr) {
 	arg = argsArr;
 	for (enum msgDataType *t = types; *t; t++, arg++) {
 		switch (*t) {
+			case MSG_BOOL:
+				*(bool *) p = *(bool *)*arg;
+				p += sizeof(bool);
+				break;
 			case MSG_INT:
 				*(int *) p = *(int *)*arg;
 				p += sizeof(int);
@@ -126,6 +131,10 @@ void msgUnpackArgs(enum msgDataType *types, void **argsArr, void *packedArgs) {
 	void **arg = argsArr;
 	for (enum msgDataType *t = types; *t; t++, arg++) {
 		switch (*t) {
+			case MSG_BOOL:
+				*(bool *)*arg = *(bool *) p;
+				p += sizeof(bool);
+				break;
 			case MSG_INT:
 				*(int *)*arg = *(int *) p;
 				p += sizeof(int);

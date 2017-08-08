@@ -16,6 +16,7 @@
 #include "drawer.h"
 #include "consoleIn.h"
 #include "consoleOut.h"
+#include "consoleStatus.h"
 
 #include "util.h"
 #include "taskManager.h"
@@ -53,13 +54,7 @@ static void onTimer();
 static void onReshape(int w, int h);
 static void onDisplay();
 
-void drawerInit(
-	double columnsPerSecond, double unplayedPerc) {
-	dbufferColumnsPerSecond = columnsPerSecond;
-
-	dsSetTimeScale(playerSampleRate, columnsPerSecond);
-
-	centeredRatio = 1-unplayedPerc/100;
+void drawerInit() {
 
 	dbufferInit();
 	dbufferMove(DRAWER_BUFFER_SIZE/2);
@@ -74,9 +69,20 @@ void drawerInit(
 
 // --- DRAWING ---
 
+int drawerBufferPos=0;
+int screenCenterColumn=0;
 bool drawOnlyControls = false;
 bool forceMain = false;
 bool forceNext = false;
+bool afterReset = false;
+
+void drawerReset() {
+	screenCenterColumn=width*msgOption_cursorPos/100;
+	msgSet_visibleBefore(screenCenterColumn);
+	msgSet_visibleAfter(width-screenCenterColumn);
+	forceNext = true;
+	afterReset = true;
+}
 
 // -- controls --
 
@@ -222,18 +228,17 @@ static void drawStatusLine() {
 		drawString(consoleInputLine, 1, 5);
 	}
 
+	char *status = consoleStatusGet();
 	glColor3fv(stringColorGreen);
-	if (9*(strlen(consoleStatus)+consoleSize+3)<=width)
-		drawString(consoleStatus, width-9*strlen(consoleStatus)-10, 5);
+	if (9*(strlen(status)+consoleSize+3)<=width)
+		drawString(status, width-9*strlen(status)-10, 5);
 	else if (!consoleLines)
-		drawString(consoleStatus, 10, 5);
+		drawString(status, 10, 5);
 
 }
 
 // -- rest --
 
-int drawerBufferPos=0;
-int screenCenterColumn=0;
 
 static inline void drawColumnColors(int screenColumn, unsigned char *colors) {
 	glRasterPos2i(screenColumn,20);
@@ -251,25 +256,18 @@ static inline void drawColumnOverlay(int screenColumn, GLbyte *colorsA) {
 	glRasterPos2i(screenColumn,20);
 	glDrawPixels(1, height-20, GL_RGBA, GL_UNSIGNED_BYTE, colorsA);
 }
-static inline void drawColumn(int screenColumn, bool previewOnly) {
+static inline void drawColumn(int screenColumn, bool scaleOnly) {
 	int column = screenColumn - screenCenterColumn + drawerBufferPos;
 	char *colors=NULL;
 	if (dbufferExists(column)) {
 		dbufferDrawn(column) = true;
-		__sync_synchronize(); // XXX maybe slow
-		if (!previewOnly && (dbufferPrecision(column) > 0)) {
+		__sync_synchronize();
+		if (!scaleOnly && (dbufferPrecision(column) > 0)) {
 			colors=&dbuffer(column, 0, 0);
 			drawColumnColors(screenColumn, colors);
 		} else {
-			if (!dbufferPreviewCreated(column)) {
-				dmvCreatePreview(column);
-			}
-			if (dbufferPreviewCreated(column)) {
-				drawColumnColor(screenColumn, &dbufferPreview(column, 0));
-			} else {
-				drawColumnColor(screenColumn, (unsigned char []){255, 0, 0});
-			}
-			if (previewOnly && (dbufferPrecision(column) > 0)) {
+			drawColumnColor(screenColumn, (unsigned char []){0, 0, 0});
+			if (scaleOnly && (dbufferPrecision(column) > 0)) {
 				dbufferDrawn(column) = false;
 			}
 		}
@@ -292,7 +290,17 @@ static inline void moveColumns(int offset) {
 }
 
 // Draws the view, possibly moving some area (if not forced)
-static void repaint(bool force) {
+static bool repaint(bool force) {
+	if (afterReset) {
+		afterReset = false;
+		drawLogo();
+		glFlush();
+		glutSwapBuffers();
+		drawLogo();
+		return false;
+	}
+
+	int time = glutGet(GLUT_ELAPSED_TIME);
 
 	{ bool tmp;
 		tmp = forceNext;
@@ -312,15 +320,16 @@ static void repaint(bool force) {
 	force |= forceMain;
 	forceMain = false;
 
+	bool interrupted = false;
 	if (!drawOnlyControls && tmTaskEnter(&drawerMainTask)) {
 		static int oldBufferPos=0;
 		int offset=drawerBufferPos-oldBufferPos;
 		if (offset > 0) {
-			for (int i = width-offset+oldBufferPos-screenCenterColumn; i<width+oldBufferPos-screenCenterColumn; i++) {
+			for (int i = oldBufferPos-screenCenterColumn; i<drawerBufferPos-screenCenterColumn; i++) {
 				dbufferDrawn(i) = false;
 			}
 		} else {
-			for (int i = oldBufferPos-screenCenterColumn; i<offset+oldBufferPos-screenCenterColumn; i++) {
+			for (int i = drawerBufferPos+width-screenCenterColumn+1; i<=oldBufferPos+width-screenCenterColumn; i++) {
 				dbufferDrawn(i) = false;
 			}
 		}
@@ -328,9 +337,20 @@ static void repaint(bool force) {
 			moveColumns(offset);
 		}
 
+		int cnt=0;
 		for (int i=0; i<width; i++) {
-			if (force || !dbufferDrawn(i+drawerBufferPos-screenCenterColumn)) {
-				drawColumn(i, false);
+
+			int j = (i < width - screenCenterColumn ? i + screenCenterColumn : width - i - 1);
+
+			if (force || !dbufferDrawn(j+drawerBufferPos-screenCenterColumn)) {
+				if (!interrupted && (++cnt % 16 == 0) && (glutGet(GLUT_ELAPSED_TIME)-time > DRAWER_MAX_PAINT_TIME)) {
+					interrupted = true;
+				}
+				if (interrupted) {
+					dbufferDrawn(j+drawerBufferPos-screenCenterColumn) = false;
+				} else {
+					drawColumn(j, false);
+				}
 			}
 		}
 
@@ -342,27 +362,35 @@ static void repaint(bool force) {
 
 	glFlush();
 	glutSwapBuffers();
+	return !interrupted;
 }
 
 // --- EVENTS ---
 
 static void onTimer() {
+	static bool lastInterrupted = false;
 	__sync_synchronize();
 	int newPos=dsPlayerPosToColumn(playerPos);
-	if (drawerBufferPos != newPos) {
+	bool done=true;
+	if ((drawerBufferPos != newPos) || lastInterrupted) {
 		dbufferMove(newPos-drawerBufferPos);
 		drawerBufferPos = newPos;
 		dmvRefresh();
 		tmResume();
-		repaint(false);
+		done=repaint(false);
 	}
-	glutTimerFunc(DRAWER_FRAME_DELAY, onTimer, 0);
+	if (done) {
+		glutTimerFunc(DRAWER_FRAME_DELAY, onTimer, 0);
+	} else {
+		glutTimerFunc(0, onTimer, 0);
+	}
+	lastInterrupted = !done;
 }
+
 
 static void onReshape(int w, int h) {
 	width=w;
 	height=h;
-	screenCenterColumn=w*centeredRatio;
 
 	glViewport(0, 0, w, h);
 	glMatrixMode(GL_PROJECTION);
@@ -371,8 +399,6 @@ static void onReshape(int w, int h) {
 	glMatrixMode(GL_MODELVIEW); glLoadIdentity(); glTranslatef(0.375, 0.375, 0.);
 
 	msgSet_columnLen(h-20);
-	msgSet_visibleBefore(screenCenterColumn);
-	msgSet_visibleAfter(w-screenCenterColumn);
 
 	glReadBuffer(GL_FRONT);
 	glDrawBuffer(GL_BACK);
@@ -380,6 +406,7 @@ static void onReshape(int w, int h) {
 
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	drawerReset();
 }
 
 static void onDisplay() {

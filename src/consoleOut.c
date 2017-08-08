@@ -12,11 +12,6 @@
 
 #include "util.h"
 
-static __attribute__((constructor)) void init() {
-	utilStrRealloc(&consoleStatus, 0, 32);
-	*consoleStatus='\0';
-}
-
 int consoleStrWidth(char *str) {
 	int width=0;
 	int lineWidth=0;
@@ -91,17 +86,6 @@ void consoleClearBlock() {
 }
 */
 
-// -- status line --
-
-char *consoleStatus=0;
-
-void consolePrintStatus(char *string) {
-	if (strcmp(consoleStatus, string)!=0) { // redisplay only if needed
-		utilStrRealloc(&consoleStatus, 0, strlen(string)+1);
-		strcpy(consoleStatus, string);
-		//drawerInvokeRedisplay();
-	}
-}
 
 
 // -- command line printing --

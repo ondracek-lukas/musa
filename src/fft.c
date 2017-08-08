@@ -12,23 +12,8 @@
 
 #include "fft.h"
 
-#define SRC_BLOCK_LEN 256
-
-static size_t blockLen = 0, blockLenLog2;
-
-#define fftWindowGenHamming(x,k) ((k)-(1-(k))*cos(2*M_PI*(x)/blockLen)) // Generalized Hamming window
-#define fftWindowHann(x)         fftWindowGenHamming((x),0.5)              // Hann window
-#define fftWindowHamming(x)      fftWindowGenHamming((x),0.54)             // Hamming window
-#define fftWindowRect(x)         1                                         // Rectangular window
-#define fftWindowTrgl(x)         ((float)((x)>blockLen/2?blockLen-(x):(x))*2/blockLen) // Triangular window
-
-#define fftWindow fftWindowHann
-static struct cache {
-	unsigned reversedIndex;
-	float windowValue;
-} *cache = NULL;
-float complex *omega = NULL;
-
+int log2CacheHash[37] = {0, 0, 1, 26, 2, 23, 27, 0, 3, 16, 24, 30, 28, 11, 0, 13, 4, 7, 17, 0, 25, 22, 31, 15, 29, 10, 12, 6, 0, 21, 14, 9, 5, 20, 8, 19, 18};
+#define log2Cache(x) log2CacheHash[(x)%37]
 
 static inline size_t reverseLowerBits(size_t value, size_t cnt) {
 	value = ((value & 0b1010101010101010) >> 1) | ((value & 0b0101010101010101) << 1);
@@ -38,33 +23,62 @@ static inline size_t reverseLowerBits(size_t value, size_t cnt) {
 	return value >> (16-cnt);
 }
 
-static void cacheOmegaInit() {
-	free(cache);
-	cache=utilMalloc(sizeof(struct cache)*blockLen);
-	for (size_t i=0; i<blockLen; i++) {
-		size_t j=reverseLowerBits(i,blockLenLog2);
-		cache[i].reversedIndex=j;
-		cache[i].windowValue=fftWindow(j);
+
+// --- SPECTRUM ---
+
+#define fftWindowGenHamming(x,blockLen,k) ((k)-(1-(k))*cos(2*M_PI*(x)/blockLen))                // Generalized Hamming window
+#define fftWindowHann(x,blockLen)         fftWindowGenHamming((x),blockLen,0.5)                 // Hann window
+#define fftWindowHamming(x,blockLen)      fftWindowGenHamming((x),blockLen,0.54)                // Hamming window
+#define fftWindowRect(x,blockLen)         1                                                     // Rectangular window
+#define fftWindowTrgl(x,blockLen)         ((float)((x)>blockLen/2?blockLen-(x):(x))*2/blockLen) // Triangular window
+
+#define fftWindow fftWindowHann
+struct cache {
+	unsigned reversedIndex;
+	float windowValue;
+};
+
+struct fftSpectrumContext {
+	size_t blockLen, blockLenLog2;
+	struct cache *cache;
+	double complex *omega;
+};
+
+
+struct fftSpectrumContext *fftCreateSpectrumContext(size_t newBlockLenLog2) {
+	struct fftSpectrumContext *context = utilMalloc(sizeof(struct fftSpectrumContext));
+	context->blockLenLog2 = newBlockLenLog2;
+	context->blockLen = 1<<newBlockLenLog2;
+	context->cache=utilMalloc(sizeof(struct cache)*context->blockLen);
+	for (size_t i=0; i<context->blockLen; i++) {
+		size_t j=reverseLowerBits(i,context->blockLenLog2);
+		context->cache[i].reversedIndex=j;
+		context->cache[i].windowValue=fftWindow(j,context->blockLen);
 	}
-	free(omega);
-	omega=utilMalloc(sizeof(float complex)*blockLenLog2);
-	for (size_t i=0, k=1; i<blockLenLog2; i++, k*=2)
-		omega[i]=cexpf(I*M_PI/k);
+	context->omega=utilMalloc(sizeof(double complex)*context->blockLenLog2);
+	for (size_t i=0, k=1; i<context->blockLenLog2; i++, k*=2)
+		context->omega[i]=cexp(I*M_PI/k);
+	return context;
 }
 
-extern void fftReset(size_t newBlockLenLog2) {
-	blockLenLog2 = newBlockLenLog2;
-	blockLen = 1<<blockLenLog2;
-	cacheOmegaInit();
+void fftDestroySpectrumContext(struct fftSpectrumContext *context) {
+	if (!context) return;
+	free(context->cache);
+	free(context->omega);
+	free(context);
 }
 
 
 
-void fftProcess(float *buffer) {
+void fftSpectrum(float *buffer, struct fftSpectrumContext *context) {
+	size_t blockLen = context->blockLen;
+	struct cache *cache = context->cache;
+	double complex *omega = context->omega;
+
 	float complex *vector = utilMalloc(sizeof(float complex)*blockLen); // TODO make it part of the reentrant data
 
 	size_t i,j,k=0;
-	float complex om, x, a, b;
+	double complex om, x, a, b;
 	while (k<blockLen) {
 #define load(i) \
 		j=cache[i].reversedIndex; \
@@ -124,4 +138,150 @@ void fftProcess(float *buffer) {
 	buffer = NULL;
 
 	free(vector);
+}
+
+
+
+// --- FILTERS ---
+
+
+// fft returning data to be shuffled
+static void fftNoShuffle(complex float *vector, size_t blockLen, double complex *omega) {
+
+	int i,j,k=0;
+	double complex om, x, a, b;
+	while (k<blockLen) {
+
+#define process(mask, maskI) \
+			om=omega[maskI]; \
+			x=1; \
+			for (i=k, j=k+(mask); i<k+(mask); i++, j++) { \
+				if (i>blockLen) {printf("AAA: %d %d %d\n", i, j, k); exit(42); } \
+				a=vector[i]; \
+				b=vector[j]; \
+				vector[i]=(a+b); \
+				vector[j]=(a-b)*x; \
+				x*=om; \
+			}
+
+
+		for (size_t mask = (~(blockLen+k-1) & (blockLen+k)) >> 1, maskI=log2Cache(mask); mask; mask>>=1, maskI--) {
+			process(mask,maskI);
+		}
+
+		k+=2;
+
+#undef process
+	}
+}
+
+// fft expecting shuffled data
+static void fftNoShuffleR(complex float *vector, size_t blockLen, double complex *omega) {
+
+	size_t i,j,k=0;
+	double complex om, x, a, b;
+	while (k<blockLen) {
+
+#define process(mask, maskI) \
+			om=omega[maskI]; \
+			x=1; \
+			for (j=k-(mask), i=j-(mask); j<k; i++, j++) { \
+				a=vector[i]; \
+				b=vector[j]; \
+				vector[i]=(a+x*b)/2; \
+				vector[j]=(a-x*b)/2; \
+				x*=om; \
+			}
+
+		k+=2;
+		process(1,0);
+
+		if (!(k&2)) {
+			process(2,1);
+			if (!(k&4)) {
+				process(4,2);
+				if (!(k&8)) {
+					process(8,3);
+					if (!(k&16)) {
+						process(16,4);
+						if (!(k&32)) {
+							process(32,5);
+							if (!(k&64)) {
+								process(64,6);
+								if (!(k&128)) {
+									process(128,7);
+									if (!(k&256)) {
+										process(256,8);
+										if (!(k&512)) {
+											process(512,9);
+											for (size_t mask=1024, maskI=10; !(k&mask); mask<<=1, maskI++) {
+												process(mask,maskI);
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+#undef process
+	}
+}
+
+
+struct fftFilterContext {
+	size_t blockLen;
+	double complex *omega, *omegaR;
+	complex float *responseSpectrum;
+};
+
+struct fftFilterContext *fftCreateFilterContext(float *impulseResponse, int impulseResponseLen, int fftBlockLenLog2) {
+
+	struct fftFilterContext *context = utilMalloc(sizeof(struct fftFilterContext));
+
+	context -> blockLen = (1<<fftBlockLenLog2);
+
+	context->omega=utilMalloc(sizeof(double complex)*fftBlockLenLog2);
+	for (size_t i=0, k=1; i<fftBlockLenLog2; i++, k*=2)
+		context->omega[i]=cexp(I*M_PI/k);
+
+	context->omegaR=utilMalloc(sizeof(double complex)*fftBlockLenLog2);
+	for (size_t i=0, k=1; i<fftBlockLenLog2; i++, k*=2)
+		context->omegaR[i]=cexp(-I*M_PI/k);
+
+	context -> responseSpectrum = utilCalloc(context->blockLen, sizeof(complex float));
+
+
+	for (int i = 0; i < impulseResponseLen; i++) {
+		context->responseSpectrum[i] = impulseResponse[i];
+	}
+	fftNoShuffle(context->responseSpectrum, context->blockLen, context->omega);
+
+	return context;
+}
+void fftDestroyFilterContext(struct fftFilterContext *context) {
+	if (context) {
+		free(context->omega);
+		free(context->omegaR);
+		free(context->responseSpectrum);
+		free(context);
+	}
+}
+void fftFilter(float *buffer, struct fftFilterContext *context) {
+	int blockLen = context->blockLen;
+	complex float *vector = utilMalloc(sizeof(float complex)*blockLen); // TODO make it part of the reentrant data
+	for (int i = 0; i<blockLen; i++) {
+		vector[i] = buffer[i];
+	}
+	fftNoShuffle(vector, context->blockLen, context->omega);
+	for (int i = 0; i < blockLen; i++) {
+		vector[i] *= context->responseSpectrum[i];
+	}
+	fftNoShuffleR(vector, context->blockLen, context->omegaR);
+
+	for (int i = 0; i<blockLen; i++) {
+		buffer[i] = vector[i];
+	}
 }

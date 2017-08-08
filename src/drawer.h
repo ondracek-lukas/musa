@@ -4,11 +4,12 @@
 #define DRAWER_H
 
 #define DRAWER_FRAME_DELAY 10   // ms
+#define DRAWER_MAX_PAINT_TIME 20   // ms
 
 extern struct taskInfo drawerMainTask;
 extern struct taskInfo drawerConsoleTask;
 
-extern void drawerInit(
-	double columnsPerSecond, double unplayedPerc);
+extern void drawerInit();
+extern void drawerReset();
 
 #endif

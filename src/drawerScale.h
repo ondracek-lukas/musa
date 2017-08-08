@@ -10,9 +10,7 @@
 
 extern double dsColumnToPlayerPosMultiplier;
 
-static inline void dsSetTimeScale(double sampleRate, double columnsPerSecond) {
-	dsColumnToPlayerPosMultiplier = sampleRate / columnsPerSecond;
-}
+extern void dsResetTimeScale();
 
 static inline int dsColumnToPlayerPos(int column) {
 	return column * dsColumnToPlayerPosMultiplier;
@@ -34,6 +32,8 @@ extern struct dsOvertonesS {
 	float offsetFract;   // the fractional part
 } dsOvertones[DS_OVERTONES_CNT];
 
-extern void dsSetToneScale(double minFreq, double maxFreq, double a1Freq);
+extern void dsResetToneScale();
+extern double dsFreqToTone(double freq);
+extern void dsGetToneName(char *name, int a1offset);
 
 #endif

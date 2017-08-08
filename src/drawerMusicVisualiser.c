@@ -11,13 +11,15 @@
 #include "util.h"
 #include "taskManager.h"
 #include "messages.h"
+#include "resampler.h"
 
 #define MAX_PRECISION_LEVELS 32
 
-static int visibleBefore, visibleAfter,
+static int
 	 processedFrom[MAX_PRECISION_LEVELS],
 	 processedTo[MAX_PRECISION_LEVELS];
 static unsigned char minPrecision, maxPrecision;
+static int fftBlockLen;
 
 
 struct taskInfo dmvTask = TM_TASK_INITIALIZER(false, false);
@@ -26,15 +28,6 @@ struct taskInfo dmvTask = TM_TASK_INITIALIZER(false, false);
 // --- COLORING ---
 
 static unsigned char colorScale[1024*3]={255}; // will be initialized below
-
-static inline double toLogScale(double value) {
-	// static float max = 0.001; // XXX
-	// if (value > max) max = value; value /= max;
-	value = log2(value)/12 + 1;
-	if (value > 1) value = 1;
-	if (!(value >= 0)) value = 0;
-	return value;
-}
 
 static inline void toColorScale(float value, unsigned char *color) {
 	unsigned valueI = value*1024;
@@ -47,68 +40,66 @@ static inline void toColorScale(float value, unsigned char *color) {
 	color[2] = colorScale[valueI+2];
 }
 
-void dmvCreatePreview(int column) {
-	int playerFrom = dsColumnToPlayerPos(column-1);
-	int playerTo = dsColumnToPlayerPos(column+1);
-	if ((playerBuffer.begin>playerFrom) || (playerBuffer.end<=playerTo)) {
-		// printf("%d > %d or %d <= %d\n", playerBuffer.begin, playerFrom, playerBuffer.end, playerTo);
-		return;
-	}
-	double sum=0;
-	for (int i = playerFrom; i<playerTo; i++) {
-		double a=playerBuffer(i);
-		sum += a*a;
-	}
-	sum /= (playerTo-playerFrom);
-	if ((playerBuffer.begin>playerFrom) || (playerBuffer.end<playerTo)) {
-		return;
-	}
 
-	toColorScale(toLogScale(sum), &dbufferPreview(column,0));
-	dbufferPreviewCreated(column)=true;
-}
-
-
-static void createColumn(int column, float *logFftResult) {
+static void createColumn(int column, float *logFftResult) { // assert: logFftResult can be modified
 	float overtoneSub[DS_OVERTONES_CNT];
 	for (int i=0; i<DS_OVERTONES_CNT; i++) {
 		overtoneSub[i] = 0;
 	}
+	double maxAmp = 0.0001;
+	double minAmp = logFftResult[0];
 	for (int i=0; i<dbuffer.columnLen; i++) {
 		double amp = logFftResult[i];
-		double addedAmp = 0;
-		/* // XXX Overtone filtering for one tone at a time
-		double evenAmp = 0;
-		double oddAmp = 0;
-		for (int j=0; j<DS_OVERTONES_CNT; j++) {
-			int offset = dsOvertones[j].offset;
-			float fract = dsOvertones[j].offsetFract;
-			if (i + offset + 1 >= dbuffer.columnLen) break;
-			float overtoneAmp = logFftResult[i + offset] * (1-fract);
-			overtoneAmp      += logFftResult[i + offset +1] * fract;
+		if (msgOption_filterOvertones) {
+			if (msgOption_oneTone) {
 
-			if (overtoneAmp > amp) overtoneAmp = amp;
+				// overtone filtering for one tone at a time
+				double addedAmp = 0;
+				double evenAmp = 0;
+				for (int j=0; j<DS_OVERTONES_CNT; j++) {
+					int offset = dsOvertones[j].offset;
+					float fract = dsOvertones[j].offsetFract;
+					if (i + offset + 1 >= dbuffer.columnLen) break;
+					float overtoneAmp = logFftResult[i + offset] * (1-fract);
+					overtoneAmp      += logFftResult[i + offset +1] * fract;
 
-			logFftResult[i + offset] -= overtoneSub[j] + overtoneAmp * (1-fract);
-			if (logFftResult[i+offset] <= 0) {
-				logFftResult[i+offset] = 0;
-			}
-			overtoneSub[j] = overtoneAmp * fract;
+					if (overtoneAmp > amp) overtoneAmp = amp;
 
-			double ampToAdd = overtoneAmp/(2<<j);
-			addedAmp += ampToAdd;
-			if (i%2) {
-				oddAmp += ampToAdd;
+					logFftResult[i + offset] -= overtoneSub[j] + overtoneAmp * (1-fract);
+					if (logFftResult[i+offset] <= 0) {
+						logFftResult[i+offset] = 0;
+					}
+					overtoneSub[j] = overtoneAmp * fract;
+
+					double ampToAdd = overtoneAmp/(2<<j);
+					addedAmp += ampToAdd;
+				}
+				amp = (amp+addedAmp)/2;
+
 			} else {
-				evenAmp += ampToAdd;
+
+				// general overtone filtering
+
 			}
 		}
-		oddAmp  = toLogScale(oddAmp*3/2);
-		evenAmp = toLogScale(evenAmp*3);
-		/*/
-		addedAmp = amp;
-		//*/
-		amp     = toLogScale((amp + addedAmp)/2);
+		logFftResult[i] = amp;
+		if (maxAmp < amp) maxAmp = amp;
+		if (minAmp > amp) minAmp = amp;
+	}
+
+
+	for (int i=0; i<dbuffer.columnLen; i++) {
+		double amp = logFftResult[i];
+
+		if (msgOption_dynamicGain) {
+			amp = log10(amp/maxAmp);
+		} else {
+			amp = log10(amp) + msgOption_gain*0.1;
+		}
+		amp = amp / (0.1*msgOption_signalToNoise) + 1;
+
+		if      (amp > 1) amp = 1;
+		else if (amp < 0) amp = 0;
 
 		toColorScale(amp, &dbuffer(column, i, 0));
 	}
@@ -149,25 +140,23 @@ void dmvInit() {
 
 static void onRestart();
 
-//void dmvResize(int columnLen, int visibleBefore, int visibleAfter, double minFreq, double maxFreq, double a1Freq) {
 void dmvReset() { // pause dmvTask and drawerMainTask before
 	if ((msgOption_columnLen<=0) || (msgOption_minFreq > msgOption_maxFreq)) { // XXX check elsewhere
 		dmvTask.active = false;
 		return;
 	}
 	dbufferRealloc(msgOption_columnLen);
-	visibleBefore = msgOption_visibleBefore;
-	visibleAfter = msgOption_visibleAfter;
 	int pos = dsPlayerPosToColumn(playerPos);
 	for (int i=0; i<MAX_PRECISION_LEVELS; i++) {
 		processedTo[i] = processedFrom[i] = pos;
 	}
 
-	dsSetToneScale(msgOption_minFreq, msgOption_maxFreq, msgOption_a1Freq);
 	logFftReset(
-			msgOption_minFreq  / 44100.0,
-			msgOption_maxFreq  / 44100.0,
-			msgOption_columnLen, &minPrecision, &maxPrecision);
+			msgOption_minFreq,
+			msgOption_maxFreq,
+			msgOption_columnLen, &fftBlockLen);
+	minPrecision = 1;
+	maxPrecision = rsCnt;
 	dmvTask.active = true;
 }
 
@@ -227,176 +216,115 @@ static inline unsigned char dlog2(unsigned int n) {
 	return l;
 }
 
-
-static inline int tryLoadInput(
+static inline bool tryProcessLogFft(
 		int pos,
-		float *inputBuffer,
-		unsigned char *precisionOut) {
-	if (pos<0) return 0b01; // no previous will be successful
-	int posPlayer = dsColumnToPlayerPos(pos);
-	int posPlayerFrom = playerBuffer.begin;
-	int posPlayerTo = playerBuffer.end;
-	unsigned char precision;
-	if (posPlayer - posPlayerFrom < posPlayerTo - posPlayer) {
-		if (posPlayer < posPlayerFrom) {
-			precision = 0;
-		} else {
-			precision = dlog2(posPlayer - posPlayerFrom);
-		}
-		if (precision < minPrecision) return 0b01; // no previous will be successfull
-	} else {
-		if (posPlayerTo < posPlayer) {
-			precision = 0;
-		} else {
-			precision = dlog2(posPlayerTo - posPlayer);
-		}
-		if (precision < minPrecision) return 0b10; // no further will be successfull
+		float *outputBuffer,
+		unsigned char *precisionPtr) {
+	double posSec = pos / msgOption_outputRate;
+	unsigned char precision = rsContainsCnt(posSec, fftBlockLen/2);
+
+	if (precision < *precisionPtr) {
+		*precisionPtr = precision;
 	}
-	if (precision > maxPrecision) {
-		precision = maxPrecision;
-	}
-	posPlayerFrom = posPlayer - (1 << precision); // inclusive
-	posPlayerTo = posPlayer + (1 << precision);   // exclusive
+
 	if (dbufferTransactionBegin(pos, precision)) {
-		if (playerBufferWrapBetween(posPlayerFrom, posPlayerTo)) {
-			int sizeToWrap = (playerBuffer.data + PLAYER_BUFFER_SIZE - &playerBuffer(posPlayerFrom));
-			memcpy(inputBuffer, &playerBuffer(posPlayerFrom), sizeToWrap * sizeof(float));
-			memcpy(inputBuffer + sizeToWrap, playerBuffer.data, (posPlayerTo-posPlayerFrom-sizeToWrap) * sizeof(float));
-			//loadInput(precision, &playerBuffer(posPlayerFrom), playerBuffer.data + PLAYER_BUFFER_SIZE);
-			//loadInput(precision, playerBuffer.data, &playerBuffer(posPlayerTo));
+		if (logFftProcess(posSec, precision, outputBuffer)) {
+			*precisionPtr = precision;
+			return true;
 		} else {
-			memcpy(inputBuffer, &playerBuffer(posPlayerFrom), (posPlayerTo-posPlayerFrom)*sizeof(float));
-			//loadInput(precision, &playerBuffer(posPlayerFrom), &playerBuffer(posPlayerTo));
-		}
-		if ((playerBuffer.end < posPlayerTo) || (playerBuffer.begin > posPlayerFrom)) {
 			dbufferTransactionAbort(pos);
-			//loadInput(0, NULL, NULL);
-			return 0b11;  // try other
 		}
-		*precisionOut = precision;
-		return 0b00; // success
 	}
-	return 0b11; // try other
+	return false;
 }
 
 static bool taskFunc() {
 
 	int bufferPos = dsPlayerPosToColumn(playerPos);
-	int visibleTo = bufferPos+visibleAfter;
+	int visibleTo = bufferPos+msgOption_visibleAfter;
 	if (visibleTo > dbuffer.end) visibleTo = dbuffer.end;
-	int visibleFrom = bufferPos-visibleBefore;
+	int visibleFrom = bufferPos-msgOption_visibleBefore;
 	if (visibleFrom < dbuffer.begin) visibleFrom = dbuffer.begin;
 	if (visibleFrom < 0) visibleFrom = 0;
 
-	bool inputLoaded = false;
-	float *inputBuffer = malloc(sizeof(float)*2u<<maxPrecision);
+	bool logFftProcessed = false;
+	float *buffer = malloc(dbuffer.columnLen * sizeof(float));
+
 	int pos;
 	unsigned char precision;
 
-	if (!inputLoaded) {
+	if (!logFftProcessed) {
+		precision = maxPrecision;
 		for (pos = processedTo[maxPrecision]; pos < visibleTo; pos++) {
-			unsigned char p;
-			switch (tryLoadInput(pos, inputBuffer, &precision)) {
-				case 0b00: // success
-					inputLoaded = true;
-					break;
-				case 0b01: // no previous will success
-				case 0b11: // try other
-					p = dbufferPrecision(pos);
-					if (p > maxPrecision) p = maxPrecision;
-					if ((p >= minPrecision) && (processedTo[p] > pos)) pos = processedTo[p]-1;
-					continue;
-				case 0b10: // no further will success
-					pos = INT_MAX-1;
-					break;
+			if (tryProcessLogFft(pos, buffer, &precision)) {
+				logFftProcessed = true;
+				break;
+			} else if (precision < minPrecision) {
+				break;
+			} else if (processedTo[precision] > pos) {
+				pos = processedTo[precision]-1;
 			}
-			if (inputLoaded) break;
 		}
 	}
 
-	if (!inputLoaded) {
-		for (pos = processedFrom[maxPrecision]-1; pos >= visibleFrom; pos--) {
-			unsigned char p;
-			switch (tryLoadInput(pos, inputBuffer, &precision)) {
-				case 0b00: // success
-					inputLoaded = true;
-					break;
-				case 0b10: // no further will success
-				case 0b11: // try other
-					p = dbufferPrecision(pos);
-					if (p > maxPrecision) p = maxPrecision;
-					if ((p >= minPrecision) && (processedFrom[p] < pos)) pos = processedFrom[p]+1;
-					continue;
-				case 0b01: // no previous will success
-					pos = INT_MIN+1;
-					break;
+	if (!logFftProcessed) {
+		precision = maxPrecision;
+		for (pos = processedFrom[maxPrecision]-1; (pos >= visibleFrom) && (pos >= 0); pos--) {
+			if (tryProcessLogFft(pos, buffer, &precision)) {
+				logFftProcessed = true;
+				break;
+			} else if (precision < minPrecision) {
+				break;
+			} else if (processedFrom[precision] < pos) {
+				pos = processedFrom[precision]+1;
 			}
-			if (inputLoaded) break;
 		}
 	}
 
-	if (!inputLoaded) {
+	if (!logFftProcessed) {
+		precision = maxPrecision;
 		for (pos = (visibleTo>processedTo[maxPrecision] ? visibleTo : processedTo[maxPrecision]); pos < dbuffer.end; pos++) {
-			unsigned char p;
-			switch (tryLoadInput(pos, inputBuffer, &precision)) {
-				case 0b00: // success
-					inputLoaded = true;
-					break;
-				case 0b01: // no previous will success
-				case 0b11: // try other
-					p = dbufferPrecision(pos);
-					if (p > maxPrecision) p = maxPrecision;
-					if ((p >= minPrecision) && (processedTo[p] > pos)) pos = processedTo[p]-1;
-					continue;
-				case 0b10: // no further will success
-					pos = INT_MAX-1;
-					break;
+			if (tryProcessLogFft(pos, buffer, &precision)) {
+				logFftProcessed = true;
+				break;
+			} else if (precision < minPrecision) {
+				break;
+			} else if (processedTo[precision] > pos) {
+				pos = processedTo[precision]-1;
 			}
-			if (inputLoaded) break;
 		}
 	}
 
-	if (!inputLoaded) {
-		for (pos = (visibleFrom<processedFrom[maxPrecision] ? visibleFrom : processedFrom[maxPrecision])-1; pos >= dbuffer.begin; pos--) {
-			unsigned char p;
-			switch (tryLoadInput(pos, inputBuffer, &precision)) {
-				case 0b00: // success
-					inputLoaded = true;
-					break;
-				case 0b10: // no further will success
-				case 0b11: // try other
-					p = dbufferPrecision(pos);
-					if (p > maxPrecision) p = maxPrecision;
-					if ((p >= minPrecision) && (processedFrom[p] < pos)) pos = processedFrom[p]+1;
-					continue;
-				case 0b01: // no previous will success
-					pos = INT_MIN+1;
-					break;
+	if (!logFftProcessed) {
+		precision = maxPrecision;
+		for (pos = (visibleFrom<processedFrom[maxPrecision] ? visibleFrom : processedFrom[maxPrecision])-1; (pos >= dbuffer.begin) && (pos >= 0); pos--) {
+			if (tryProcessLogFft(pos, buffer, &precision)) {
+				logFftProcessed = true;
+				break;
+			} else if (precision < minPrecision) {
+				break;
+			} else if (processedFrom[precision] < pos) {
+				pos = processedFrom[precision]+1;
 			}
-			if (inputLoaded) break;
 		}
 	}
 
-	if (!inputLoaded) {
-		free(inputBuffer);
+	if (!logFftProcessed) {
+		free(buffer);
 		return false;
 	}
 
-	float *outputBuffer = malloc(dbuffer.columnLen * sizeof(float));
-
-	logFftProcess(precision, inputBuffer, outputBuffer);
-
-	if (dbufferTransactionCheck(pos)) {
-		createColumn(pos, outputBuffer);
-		dbufferTransactionCommit(pos, precision);
-	} else {
+	if (!dbufferTransactionCheck(pos)) {
 		dbufferTransactionAbort(pos);
+		free(buffer);
+		return false;
 	}
 
-	free(inputBuffer);
-	free(outputBuffer);
+	createColumn(pos, buffer);
+	free(buffer);
 
-	return true;
+	bool ret = dbufferTransactionCommit(pos, precision);
+	return ret;
 }
 
 

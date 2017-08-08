@@ -1,11 +1,13 @@
 // MusA  Copyright (C) 2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
+#define _GNU_SOURCE
 #include "taskManager.h"
 #include "util.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <errno.h>
 
 #ifdef TM_LOG
 #define LOG printf
@@ -32,6 +34,9 @@ static struct workerInfo {
 	double profWork;
 #endif
 } *workers;
+#ifdef TM_PROFILER
+	const char *profNames[1024];
+#endif
 
 #ifdef TM_PROFILER
 
@@ -95,12 +100,17 @@ static struct workerInfo {
 
 static void *worker(struct workerInfo *info);
 static __attribute__((constructor)) void init() {
+	struct sched_param param;
+	param.sched_priority=0;
+
 	workersCnt=sysconf(_SC_NPROCESSORS_ONLN);
 	workers=utilMalloc(sizeof(struct workerInfo)*workersCnt);
 	for (size_t i=0; i<workersCnt; i++) {
 		workers[i].id=i;
 		workers[i].sleeping=false;
 		pthread_create(&workers[i].threadID, NULL, (void*(*)(void*))worker, workers+i);
+		if (pthread_setschedparam(workers[i].threadID, SCHED_IDLE, &param))
+			printf("C\n");
 	}
 }
 
@@ -119,7 +129,7 @@ __attribute__((destructor)) void tmStop() {
 	}
 #ifdef TM_PROFILER
 	printf("\n");
-	printf("                            work |                 overhead |      sleep\n");
+	printf("                                            work |                 overhead |      sleep\n");
 	printf("\n");
 
 	double sleepTime = 0, workTime = 0, overheadTime=0;
@@ -141,8 +151,9 @@ __attribute__((destructor)) void tmStop() {
 			}
 		}
 		if ((cnt[0]==0) && (cnt[1]==0)) continue;
-		printf("%5d :",
-			priority);
+		printf("%5d %15s :",
+			priority,
+			profNames[i]);
 		for (int j=1; j>=0; j--) {
 			if (cnt[j]>0) {
 				printf("    %9.3f ms  %5.2f %% |",
@@ -157,7 +168,7 @@ __attribute__((destructor)) void tmStop() {
 		printf("\n");
 	}
 	printf("\n");
-	printf("  ALL :                  %5.2f %% |                  %5.2f %% |    %5.2f %%\n",
+	printf("  ALL                 :                  %5.2f %% |                  %5.2f %% |    %5.2f %%\n",
 		workTime/wholeTime*100.0,
 		overheadTime/wholeTime*100.0,
 		sleepTime/wholeTime*100.0);
@@ -175,11 +186,15 @@ struct taskHandler {
 	struct taskHandler *next;
 } *tasks = NULL;
 
-void tmTaskRegister(struct taskInfo *task, bool(*func)(), int priority) {
+void tmTaskRegisterName(struct taskInfo *task, bool(*func)(), int priority, const char *name) {
 	struct taskHandler *handler = malloc(sizeof(struct taskHandler));
 	handler -> task = task;
 	handler -> func = func;
 	handler -> priority = priority;
+#ifdef TM_PROFILER
+	if (profNames[priority+512]) utilExitErr("tm: priority used twice (%d)", priority);
+	profNames[priority+512] = name;
+#endif
 	struct taskHandler **ph = &tasks;
 	while (*ph && ((*ph)->priority < priority)) ph = &(*ph)->next;
 	handler -> next = *ph;

@@ -7,12 +7,12 @@
 #include "fft.h"
 
 extern void logFftReset(
-		float minFreqMult, // min frequency in multiples of sample rate
-		float maxFreqMult, // max frequency in multiples of sample rate
-		int outputLen,
-		unsigned char *minPrecision, unsigned char *maxPrecision);
+		float newMinFreq,
+		float newMaxFreq,
+		int newOutputLen,
+		int *blockLenOut);
 
-extern void logFftProcess(unsigned char precision, float *inputBuffer, float *outputBuffer);
+extern bool logFftProcess(double posSec, int blocksCnt, float *outputBuffer);
 
 
 

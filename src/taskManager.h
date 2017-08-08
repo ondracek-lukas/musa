@@ -39,6 +39,16 @@
 #include <stdbool.h>
 
 
+// Following two defines should be commented in release.
+
+// Print statistics on stop/exit.
+#define TM_PROFILER
+
+// Print debug messages.
+//#define TM_LOG
+
+
+
 // It is safe to change active/serial flags any time,
 // but it is recommended to change them when task is paused,
 // to be sure it takes effect immediately.
@@ -55,7 +65,8 @@ struct taskInfo {
 
 // Task registering should be performed before first tmResume call,
 // it is NOT thread-safe.
-void tmTaskRegister(struct taskInfo *task, bool(*func)(), int priority);
+void tmTaskRegisterName(struct taskInfo *task, bool(*func)(), int priority, const char *name);
+#define tmTaskRegister(task, func, priority) tmTaskRegisterName(task, func, priority, #task)
 
 
 // Example of task pausing from one thread:
@@ -109,14 +120,5 @@ void tmResume();
 // It is automatically called on exit,
 // so it is not necessary to call it at all.
 void tmStop();
-
-
-// Following two defines should be commented in release.
-
-// Print statistics on stop/exit.
-#define TM_PROFILER
-
-// Print debug messages.
-//#define TM_LOG
 
 #endif

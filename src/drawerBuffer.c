@@ -4,7 +4,6 @@
 
 
 struct dbufferS dbuffer;
-double dbufferColumnsPerSecond=0;
 
 
 void dbufferInit() {
@@ -34,7 +33,6 @@ void dbufferMove(int offset) { // to be called only from the main thread
 		for (int i=dbuffer.end; i<dbuffer.end+offset; i++) {
 			if (__sync_lock_test_and_set(&dbufferState(i), DBUFF_INVALID) != DBUFF_PROCESSING)
 				dbufferState(i)=DBUFF_READY;
-			dbufferPreviewCreated(i)=false;
 			dbufferDrawn(i)=false;
 			dbufferPrecision(i)=0;
 		}
@@ -47,7 +45,6 @@ void dbufferMove(int offset) { // to be called only from the main thread
 		for (int i=dbuffer.begin+offset; i<dbuffer.begin; i++) {
 			if (__sync_lock_test_and_set(&dbufferState(i), DBUFF_INVALID) != DBUFF_PROCESSING)
 				dbufferState(i)=DBUFF_READY;
-			dbufferPreviewCreated(i)=false;
 			dbufferDrawn(i)=false;
 			dbufferPrecision(i)=0;
 		}

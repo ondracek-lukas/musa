@@ -6,7 +6,18 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-extern void fftReset(size_t blockLenLog2);    // TODO rename and make it reentrant
-extern void fftProcess(float *buffer);
+struct fftSpectrumContext;
+
+extern struct fftSpectrumContext *fftCreateSpectrumContext(size_t newBlockLenLog2);
+extern void fftDestroySpectrumContext(struct fftSpectrumContext *context);
+
+extern void fftSpectrum(float *buffer, struct fftSpectrumContext *context);
+
+
+struct fftFilterContext;
+
+extern struct fftFilterContext *fftCreateFilterContext(float *impulseResponse, int impulseResponseLen, int fftBlockLenLog2);
+extern void fftDestroyFilterContext(struct fftFilterContext *context);
+extern void fftFilter(float *buffer, struct fftFilterContext *context);
 
 #endif
