@@ -23,7 +23,7 @@ static inline int dsPlayerPosToColumn(int playerPos) {
 
 // --- TONE SCALE ---
 
-#define DS_OVERTONES_CNT 16
+#define DS_OVERTONES_CNT 8
 
 extern double dsMinFreq, dsMaxFreq, dsA1Freq;
 extern double dsSemitoneOffset, dsA1Index;

@@ -6,6 +6,7 @@
 
 #include "player.h"
 #include "messages.h"
+#include "taskManager.h"
 
 static pthread_t thread;
 
@@ -19,20 +20,35 @@ extern void playerUseFDQuiet(FILE *fd, float sampleRate) {
 	msgSend_newSource();
 }
 
-static void *fdReader(void *sourceFile){ // TODO rewrite not to store zeros
+bool playerPlaying = false;
+
+static void *fdReader(void *sourceFile){
 	FILE *fd=sourceFile;
+	playerPlaying = true;
 	while (!feof(fd) && !ferror(fd)) {
-		size_t blockSize=PLAYER_BLOCK_SIZE;
-		if (sbWrapBetween(&playerBuffer, playerBuffer.end, playerBuffer.end+blockSize)) {
-			blockSize = PLAYER_BUFFER_SIZE - sbPosToIndex(&playerBuffer, playerBuffer.end);
+		size_t len=PLAYER_BLOCK_SIZE;
+		if (sbWrapBetween(&playerBuffer, playerBuffer.end, playerBuffer.end+len)) {
+			len = PLAYER_BUFFER_SIZE - sbPosToIndex(&playerBuffer, playerBuffer.end);
 		}
-		sbPreAppend(&playerBuffer, playerBuffer.end+blockSize);
-		sbPostAppend(&playerBuffer, playerBuffer.end +
-			fread(
+		sbPreAppend(&playerBuffer, playerBuffer.end+len);
+		len = fread(
 				playerBuffer.data + sbPosToIndex(&playerBuffer, playerBuffer.end),
-				sizeof(float), blockSize, fd));
+				sizeof(float), len, fd);
+		if (playerPlaying) {
+			sbPostAppend(&playerBuffer, playerBuffer.end + len);
+			tmResume();
+		}
 		playerPos = playerBuffer.end;
 	}
 	playerRunning=false;
+	playerPlaying = false;
 	return NULL;
+}
+
+
+extern void playerPlay() {
+	playerPlaying = true;
+}
+extern void playerPause() {
+	playerPlaying = false;
 }

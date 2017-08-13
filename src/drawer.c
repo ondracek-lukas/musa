@@ -50,6 +50,11 @@ double centeredRatio;
 #define SCALE_LABELS_FONT GLUT_BITMAP_HELVETICA_12
 #define KEYBOARD_ALPHA 0.5
 
+bool repaintInvoked = false;
+void drawerInvokeRepaint() {
+	repaintInvoked = true;
+}
+
 static void onTimer();
 static void onReshape(int w, int h);
 static void onDisplay();
@@ -368,23 +373,18 @@ static bool repaint(bool force) {
 // --- EVENTS ---
 
 static void onTimer() {
-	static bool lastInterrupted = false;
-	__sync_synchronize();
 	int newPos=dsPlayerPosToColumn(playerPos);
-	bool done=true;
-	if ((drawerBufferPos != newPos) || lastInterrupted) {
-		dbufferMove(newPos-drawerBufferPos);
-		drawerBufferPos = newPos;
-		dmvRefresh();
-		tmResume();
-		done=repaint(false);
-	}
+
+	dbufferMove(newPos-drawerBufferPos);
+	drawerBufferPos = newPos;
+	dmvRefresh();
+	bool done=repaint(false);
+
 	if (done) {
 		glutTimerFunc(DRAWER_FRAME_DELAY, onTimer, 0);
 	} else {
 		glutTimerFunc(0, onTimer, 0);
 	}
-	lastInterrupted = !done;
 }
 
 

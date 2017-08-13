@@ -3,7 +3,7 @@
 
 // consoleOut takes care of printing text to user.
 
-// To be used only from one thread at a time:
+// To be used only from one thread at a time (except *Msg functions):
 // direct access is allowed only from event-dispatcher thread under drawerConsoleTask,
 // use messages module to call functions with paused task.
 
@@ -16,7 +16,6 @@
 
 
 struct utilStrList;
-
 
 /*
 // Prints block from stringsData, returns false if doesn't exist
@@ -55,6 +54,12 @@ extern struct utilStrList *consoleLines;
 extern struct utilStrList *consoleBlock;
 extern int consoleBlockWidth;
 extern int consoleBlockHeight;
+
+
+
+// formatted printing using messages module, these functions are thread-safe
+extern __attribute__((format(printf,1,2))) void consolePrintMsg(const char *fmt, ...);
+extern __attribute__((format(printf,1,2))) void consolePrintErrMsg(const char *fmt, ...);
 
 
 #endif

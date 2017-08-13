@@ -12,9 +12,13 @@
 struct streamBuffer playerBuffer;
 
 int playerPos;      // current position in the stream
-bool playerRunning;  // end of stream has been reached
+bool playerRunning;  // end of stream has not been reached
 double playerSampleRate;
 
 extern void playerUseFDQuiet(FILE *fd, float sampleRate);
+
+bool playerPlaying;
+extern void playerPlay();
+extern void playerPause();
 
 #endif

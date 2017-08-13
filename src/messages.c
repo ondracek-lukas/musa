@@ -40,6 +40,7 @@ void msgSend(struct msgType *type, void **args) {
 	do {
 		item->next = messages;
 	} while (!__sync_bool_compare_and_swap(&messages, item->next, item));
+	tmResume();
 }
 
 static bool taskFunc() {

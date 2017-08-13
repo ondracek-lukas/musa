@@ -1,6 +1,7 @@
 // MusA               Copyright (C) 2016--2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 // Geometric Figures  Copyright (C) 2015--2016  Lukáš Ondráček <ondracek.lukas@gmail.com>
 
+#define _GNU_SOURCE
 #include "consoleOut.h"
 
 #include <GL/freeglut.h>
@@ -11,6 +12,7 @@
 #include <stdbool.h>
 
 #include "util.h"
+#include "messages.h"
 
 int consoleStrWidth(char *str) {
 	int width=0;
@@ -87,6 +89,26 @@ void consoleClearBlock() {
 */
 
 
+// -- async formatted printing using messages --
+
+__attribute__((format(printf,1,2))) void consolePrintMsg(const char *fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	char *str=NULL;
+	vasprintf(&str, fmt, args);
+	va_end(args);
+	msgSend_print(str);
+	free(str);
+}
+__attribute__((format(printf,1,2))) void consolePrintErrMsg(const char *fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	char *str=NULL;
+	vasprintf(&str, fmt, args);
+	va_end(args);
+	msgSend_print(str);
+	free(str);
+}
 
 // -- command line printing --
 

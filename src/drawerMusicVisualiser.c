@@ -12,6 +12,7 @@
 #include "taskManager.h"
 #include "messages.h"
 #include "resampler.h"
+#include "overtoneFilter.h"
 
 #define MAX_PRECISION_LEVELS 32
 
@@ -42,49 +43,15 @@ static inline void toColorScale(float value, unsigned char *color) {
 
 
 static void createColumn(int column, float *logFftResult) { // assert: logFftResult can be modified
-	float overtoneSub[DS_OVERTONES_CNT];
-	for (int i=0; i<DS_OVERTONES_CNT; i++) {
-		overtoneSub[i] = 0;
+	if (msgOption_filterOvertones) {
+		ofProcess(logFftResult);
 	}
+
 	double maxAmp = 0.0001;
 	double minAmp = logFftResult[0];
 	for (int i=0; i<dbuffer.columnLen; i++) {
-		double amp = logFftResult[i];
-		if (msgOption_filterOvertones) {
-			if (msgOption_oneTone) {
-
-				// overtone filtering for one tone at a time
-				double addedAmp = 0;
-				double evenAmp = 0;
-				for (int j=0; j<DS_OVERTONES_CNT; j++) {
-					int offset = dsOvertones[j].offset;
-					float fract = dsOvertones[j].offsetFract;
-					if (i + offset + 1 >= dbuffer.columnLen) break;
-					float overtoneAmp = logFftResult[i + offset] * (1-fract);
-					overtoneAmp      += logFftResult[i + offset +1] * fract;
-
-					if (overtoneAmp > amp) overtoneAmp = amp;
-
-					logFftResult[i + offset] -= overtoneSub[j] + overtoneAmp * (1-fract);
-					if (logFftResult[i+offset] <= 0) {
-						logFftResult[i+offset] = 0;
-					}
-					overtoneSub[j] = overtoneAmp * fract;
-
-					double ampToAdd = overtoneAmp/(2<<j);
-					addedAmp += ampToAdd;
-				}
-				amp = (amp+addedAmp)/2;
-
-			} else {
-
-				// general overtone filtering
-
-			}
-		}
-		logFftResult[i] = amp;
-		if (maxAmp < amp) maxAmp = amp;
-		if (minAmp > amp) minAmp = amp;
+		if (maxAmp < logFftResult[i]) maxAmp = logFftResult[i];
+		if (minAmp > logFftResult[i]) minAmp = logFftResult[i];
 	}
 
 

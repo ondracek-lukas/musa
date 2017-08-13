@@ -49,6 +49,17 @@ char *consoleStatusGet() {
 			dsGetToneName(name, floor(dsFreqToTone(msgOption_maxFreq)));
 			append("%s]", name);
 		}
+
+		{ // overtone filtering
+			if (msgOption_filterOvertones) {
+				int blur        = msgOption_overtoneBlur;
+				float threshold = msgOption_overtoneThreshold;
+				float ratio     = msgOption_overtoneRatio;
+				float addition  = msgOption_overtoneAddition;
+				append(" [%d px, %.0f %%, %.0f %%, %.0f %%]", blur, threshold, ratio, addition);
+			}
+
+		}
 		
 		{ // gain
 			double signalToNoise = msgOption_signalToNoise;
