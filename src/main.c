@@ -26,6 +26,7 @@ int main(int argc, char **argv){
 
 	char c;
 	bool showHelp=false;
+	char *filename = NULL;
 	while (!showHelp && ((c=getopt(argc, argv, "?i:r:c:u:a:-:")) != -1)) {
 		switch (c) {
 			case '?':
@@ -48,6 +49,14 @@ int main(int argc, char **argv){
 				break;
 		}
 	}
+	if (optind < argc) {
+		if (optind == argc-1) {
+			filename = argv[optind];
+		} else {
+			showHelp = true;
+		}
+	}
+
 	if (showHelp) {
 		printf(
 			"\n"
@@ -80,9 +89,12 @@ int main(int argc, char **argv){
 	glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE);
 	glutCreateWindow("MusA (musical analyser)");
 
-	playerUseFDQuiet(stdin, sampleRate);
 	drawerInit();
 	hidInit();
+
+	if (filename) {
+		msgSend_open(filename);
+	}
 
 	glutMainLoop();
 	return 0;

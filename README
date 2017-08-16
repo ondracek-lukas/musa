@@ -28,23 +28,7 @@
 
 
 Dependencies:
-  OpenGL, Freeglut 3.0
-  PulseAudio, libav-tools
-
-
-The application itself expects a binary stream of floats of audio samples
-on standard input, therefore it is recommended to run the wrapper scripts
-musa-mic (for real-time input audio processing)
-and musa-file (for audio file processing).
-
-Simple usage:
-  musa-file --file file.mp3
-  musa-mic
-
-For more options run:
-  musa -?
-  musa-file -?
-  musa-mic -?
+  OpenGL, Freeglut 3.0, ffmpeg, PortAudio
 
 
 The interface (including options and wrappers) will change in later versions.

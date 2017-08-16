@@ -326,7 +326,7 @@ static bool repaint(bool force) {
 	forceMain = false;
 
 	bool interrupted = false;
-	if (!drawOnlyControls && tmTaskEnter(&drawerMainTask)) {
+	if (!drawOnlyControls && (playerSourceType != PLAYER_SOURCE_NONE) && tmTaskEnter(&drawerMainTask)) {
 		static int oldBufferPos=0;
 		int offset=drawerBufferPos-oldBufferPos;
 		if (offset > 0) {

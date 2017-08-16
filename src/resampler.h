@@ -11,7 +11,8 @@ int rsCnt;
 double *rsRates;
 struct streamBuffer **rsBuffers;
 
-extern void rsReset();
+extern void rsResetHard();
+extern void rsResetSoft();
 extern int rsContainsCnt(double posSec, int radius);
 extern bool rsRead(int index, double posSec, int radius, float *outBuffer);
 

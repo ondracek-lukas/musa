@@ -5,6 +5,11 @@
 
 bool sbRead(struct streamBuffer *sb, int begin, int end, float *outBuffer) {
 	if (!sbContainsBegin(sb, begin) || !sbContainsEnd(sb, end)) return false;
+	if (!sbStreamContainsBegin(sb, end) || !sbStreamContainsEnd(sb, begin)) {
+		return false; // all zeroes otherwise
+		//memset(outBuffer, 0, (end-begin) * sizeof(float));
+		//return true;
+	}
 	if (!sbStreamContainsBegin(sb, begin)) {
 		int size = sb->streamBegin - begin;
 		memset(outBuffer, 0, size * sizeof(float));
@@ -15,14 +20,16 @@ bool sbRead(struct streamBuffer *sb, int begin, int end, float *outBuffer) {
 		memset(outBuffer + sb->streamEnd - begin, 0, end - sb->streamEnd);
 		end = sb->streamEnd;
 	}
-	if (sbWrapBetween(sb, begin, end)) {
-		int sizeToWrap = (sb->data + STREAM_BUFFER_SIZE - &sbValue(sb, begin));
-		memcpy(outBuffer, &sbValue(sb, begin), sizeToWrap * sizeof(float));
-		memcpy(outBuffer + sizeToWrap, sb->data, (end-begin-sizeToWrap) * sizeof(float));
-	} else {
-		memcpy(outBuffer, &sbValue(sb, begin), (end-begin)*sizeof(float));
+	if (begin < end) {
+		if (sbWrapBetween(sb, begin, end)) {
+			int sizeToWrap = (sb->data + STREAM_BUFFER_SIZE - &sbValue(sb, begin));
+			memcpy(outBuffer, &sbValue(sb, begin), sizeToWrap * sizeof(float));
+			memcpy(outBuffer + sizeToWrap, sb->data, (end-begin-sizeToWrap) * sizeof(float));
+		} else {
+			memcpy(outBuffer, &sbValue(sb, begin), (end-begin)*sizeof(float));
+		}
+		if (!sbContainsBegin(sb, begin) || !sbContainsEnd(sb, end)) return false;
 	}
-	if (!sbContainsBegin(sb, begin) || !sbContainsEnd(sb, end)) return false;
 	return true;
 }
 
@@ -74,7 +81,7 @@ void sbClear(struct streamBuffer *sb, int begin, int end) {
 	}
 }
 
-void sbWrite(struct streamBuffer *sb, int begin, int end, float *data) {
+void sbWrite(struct streamBuffer *sb, int begin, int end, const float *data) {
 	if (!sbStreamContainsBegin(sb, begin)) {
 		int size = sb->streamBegin - begin;
 		data += size;

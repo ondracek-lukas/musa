@@ -108,6 +108,10 @@ void dmvInit() {
 static void onRestart();
 
 void dmvReset() { // pause dmvTask and drawerMainTask before
+	if (playerSourceType == PLAYER_SOURCE_NONE) {
+		dmvTask.active = false;
+		return;
+	}
 	if ((msgOption_columnLen<=0) || (msgOption_minFreq > msgOption_maxFreq)) { // XXX check elsewhere
 		dmvTask.active = false;
 		return;

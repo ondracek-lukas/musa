@@ -14,7 +14,7 @@ void *utilRealloc(void *ptr, size_t size);
 
 #define utilExitErr(format,...) { \
 	fprintf(stderr, "Error occurred: " format "\n", ##__VA_ARGS__); \
-	exit(1); \
+	abort(); \
 }
 
 

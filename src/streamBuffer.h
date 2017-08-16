@@ -54,6 +54,6 @@ extern void sbPrePrepend(struct streamBuffer *sb, int newBegin);
 extern void sbPostPrepend(struct streamBuffer *sb, int newBegin);
 
 extern void sbClear(struct streamBuffer *sb, int begin, int end);
-extern void sbWrite(struct streamBuffer *sb, int begin, int end, float *data);
+extern void sbWrite(struct streamBuffer *sb, int begin, int end, const float *data);
 
 #endif

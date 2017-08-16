@@ -68,6 +68,10 @@ sub quote($) {
 	#return qq("$str");
 	return '"'. ($str =~ s=(["])=\\$1=rg) .'"';
 }
+sub doublePercent($) {
+	my $str = shift;
+	return $str =~ s=(%)=%%=rg;
+}
 
 
 sub getMsgTypeDName    {shift =~ s/([^_]*)(_.*)?/$1D$2/r}
@@ -133,7 +137,7 @@ sub msgType {  # (msgTypeName) OR (msgTypeName, [args], [pause], callbackName, m
 			initializer("", formatArgs {"$argCTypeConst, "} . "MSG_VOID") . ";";
 		say "static struct msgType $msgTypeDName = ". initializer("",
 			$msgTypeArgsName,
-			initializer("struct taskInfo *[]", map({"&$_"} @$pauseTasks), "NULL"),
+			initializer("struct taskInfo *[]", map({"&${_}Task"} @$pauseTasks), "NULL"),
 			$callbackName,
 			($msgOptionName ? "&$msgOptionName" : "NULL")),";";
 		say "struct msgType *$msgTypeName = &$msgTypeDName;";
@@ -387,9 +391,9 @@ while (my ($name,$option) = each %options) {
 	func "void msgSetPrint_$name";
 	packedFunc "static void callbackSetPrint_$name";
 		if ($option->{type} eq "bool") {
-			callPrint "%2s$option->{aliases}[0]" . ($option->{unit} ? " $option->{unit}" : ""), qq((msgOption_$name ? "" : "no"));
+			callPrint "%2s$option->{aliases}[0]" . ($option->{unit} ? doublePercent " $option->{unit}" : ""), qq((msgOption_$name ? "" : "no"));
 		} else {
-			callPrint "  $option->{aliases}[0]=%*" . ($option->{unit} ? " $option->{unit}" : ""), $option->{type}, "msgOption_$name";
+			callPrint "  $option->{aliases}[0]=%*" . ($option->{unit} ? doublePercent " $option->{unit}" : ""), $option->{type}, "msgOption_$name";
 		}
 	msgType "msgTypeSetPrint_$name", [], [], "callbackSetPrint_$name";
 
@@ -436,10 +440,10 @@ while (my ($name,$option) = each %options) {
 				#while (my ($name,$option) = each %options) {
 			next if not $option->{aliases} or not @{$option->{aliases}};
 			if ($option->{type} eq "bool") {
-				push @format, "%2s$option->{aliases}[0]" . ($option->{unit} ? " $option->{unit}" : "");
+				push @format, "%2s$option->{aliases}[0]" . ($option->{unit} ? doublePercent " $option->{unit}" : "");
 				push @vars,   qq((msgOption_$name ? "" : "no"));
 			} else {
-				push @format, "  $option->{aliases}[0]=%*" . ($option->{unit} ? " $option->{unit}" : "");
+				push @format, "  $option->{aliases}[0]=%*" . ($option->{unit} ? doublePercent " $option->{unit}" : "");
 				push @types,  $option->{type};
 				push @vars,   "msgOption_$name";
 			}

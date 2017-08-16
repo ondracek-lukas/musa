@@ -35,41 +35,59 @@ char *consoleStatusGet() {
 	if (tmTaskEnter(&consoleStatusTask)) {
 		statusLen = 0;
 
-		{ // elapsed time
-			int s = playerPos/playerSampleRate;
-			int m = s/60; s -= m*60;
-			int h = m/60; m -= h*60;
-			append(" [%02d:%02d:%02d]", h, m, s);
-		}
-
-		{ // tone range
-			char name[10];
-			dsGetToneName(name, ceil(dsFreqToTone(msgOption_minFreq)));
-			append(" [%s-", name);
-			dsGetToneName(name, floor(dsFreqToTone(msgOption_maxFreq)));
-			append("%s]", name);
-		}
-
-		{ // overtone filtering
-			if (msgOption_filterOvertones) {
-				int blur        = msgOption_overtoneBlur;
-				float threshold = msgOption_overtoneThreshold;
-				float ratio     = msgOption_overtoneRatio;
-				float addition  = msgOption_overtoneAddition;
-				append(" [%d px, %.0f %%, %.0f %%, %.0f %%]", blur, threshold, ratio, addition);
+		char *source = playerSource;
+		if (source) {
+			{ // source
+				append("%s", source);
 			}
 
-		}
-		
-		{ // gain
-			double signalToNoise = msgOption_signalToNoise;
-			if (msgOption_dynamicGain) {
-				append(" [-, %0.1lf dB]", signalToNoise);
-			} else {
-				double gain = msgOption_gain;
-				append(" [%0.1lf dB, %0.1lf dB]", gain, signalToNoise);
+			{ // elapsed time, duration
+				int s = playerPosSec;
+				int m = s/60; s -= m*60;
+				int h = m/60; m -= h*60;
+				append(" [%02d:%02d:%02d", h, m, s);
+
+				if (playerDuration > 0) {
+					s = playerDuration;
+					m = s/60; s -= m*60;
+					h = m/60; m -= h*60;
+					append("/%02d:%02d:%02d]", h, m, s);
+				} else {
+					append("]");
+				}
+			}
+
+			{ // tone range
+				char name[10];
+				dsGetToneName(name, ceil(dsFreqToTone(msgOption_minFreq)));
+				append(" [%s-", name);
+				dsGetToneName(name, floor(dsFreqToTone(msgOption_maxFreq)));
+				append("%s]", name);
+			}
+
+			{ // overtone filtering
+				if (msgOption_filterOvertones) {
+					int blur        = msgOption_overtoneBlur;
+					float threshold = msgOption_overtoneThreshold;
+					float ratio     = msgOption_overtoneRatio;
+					float addition  = msgOption_overtoneAddition;
+					append(" [%d px, %.0f %%, %.0f %%, %.0f %%]", blur, threshold, ratio, addition);
+				}
+
 			}
 			
+			{ // gain
+				double signalToNoise = msgOption_signalToNoise;
+				if (msgOption_dynamicGain) {
+					append(" [-, %0.1lf dB]", signalToNoise);
+				} else {
+					double gain = msgOption_gain;
+					append(" [%0.1lf dB, %0.1lf dB]", gain, signalToNoise);
+				}
+
+			}
+		} else {
+			append("nothing opened");
 		}
 
 		tmTaskLeave(&consoleStatusTask);

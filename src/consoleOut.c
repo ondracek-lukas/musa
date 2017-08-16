@@ -106,7 +106,7 @@ __attribute__((format(printf,1,2))) void consolePrintErrMsg(const char *fmt, ...
 	char *str=NULL;
 	vasprintf(&str, fmt, args);
 	va_end(args);
-	msgSend_print(str);
+	msgSend_printErr(str);
 	free(str);
 }
 
@@ -145,6 +145,7 @@ void consolePrintLinesList(struct utilStrList *lines) {
 }
 
 void consolePrintErr(char *str) {
+	printf("%s\n", str);
 	static char *str2=0;
 	utilStrRealloc(&str2, 0, strlen(str)+2);
 	*str2=consoleSpecialColorRed;

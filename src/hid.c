@@ -124,38 +124,62 @@ static void keyPress(unsigned char c, int x, int y) {
 					break;
 
 				// change gain
-				case 'o':
+				case 't':
 					msgSet_gain(msgOption_gain + arg1);
 					action1("increase gain by %d dB");
 					break;
-				case 'y':
+				case 'g':
 					msgSet_gain(msgOption_gain - arg1);
 					action1("decrease gain by %d dB");
 					break;
-				case 'O':
+				case 'G':
 					msgSet_dynamicGain(!msgOption_dynamicGain);
 					action("toggle dynamic gain");
 					break;
 
 				// change signal to noise ratio
-				case 'l':
+				case 'b':
 					msgSet_signalToNoise(msgOption_signalToNoise + arg1);
 					action1("increase signal to noise ratio by %d dB");
 					break;
-				case 'h':
+				case 'v':
 					msgSet_signalToNoise(msgOption_signalToNoise - arg1);
 					action1("decrease signal to noise ratio by %d dB");
 					break;
 
+				// open
+				case 'o':
+					consoleKeyPress(':');
+					consoleKeyPress('o');
+					consoleKeyPress('p');
+					consoleKeyPress('e');
+					consoleKeyPress('n');
+					consoleKeyPress(' ');
+					break;
+				case 'O':
+					msgSend_openDeviceDefault();
+					break;
+
 				// play/pause
 				case ' ':
+					key="space";
 					if (playerPlaying) {
 						msgSend_pause();
+						action("pause");
 					} else {
 						msgSend_play();
+						action("play");
 					}
-					key="space";
-					action("play/pause");
+					break;
+
+				// seek in stream
+				case 'l':
+					msgSend_seekRel(arg1);
+					action1s("seek forward by %d second%s");
+					break;
+				case 'h':
+					msgSend_seekRel(-arg1);
+					action1s("seek backward by %d second%s");
 					break;
 
 				// quit
@@ -170,43 +194,29 @@ static void keyPress(unsigned char c, int x, int y) {
 					action("toggle overtone filtering");
 					break;
 				case 'a':
-					msgSet_overtoneBlur(msgOption_overtoneBlur + arg1);
-					action1("increase overtoneBlur by %d px");
-					break;
-				case 'z':
-					msgSet_overtoneBlur(msgOption_overtoneBlur - arg1);
-					action1("decrease overtoneBlur by %d px");
-					break;
-				case 's':
 					msgSet_overtoneThreshold(msgOption_overtoneThreshold + 10*arg1);
 					action1("increase overtoneThreshold by %d0 px");
 					break;
-				case 'x':
+				case 'z':
 					msgSet_overtoneThreshold(msgOption_overtoneThreshold - 10*arg1);
 					action1("decrease overtoneThreshold by %d0 px");
 					break;
-				case 'd':
+				case 's':
 					msgSet_overtoneRatio(msgOption_overtoneRatio + 10*arg1);
 					action1("increase overtoneRatio by %d0 px");
 					break;
-				case 'c':
+				case 'x':
 					msgSet_overtoneRatio(msgOption_overtoneRatio - 10*arg1);
 					action1("decrease overtoneRatio by %d0 px");
 					break;
-				case 'f':
+				case 'd':
 					msgSet_overtoneAddition(msgOption_overtoneAddition + 10*arg1);
 					action1("increase overtoneAddition by %d0 px");
 					break;
-				case 'v':
+				case 'c':
 					msgSet_overtoneAddition(msgOption_overtoneAddition - 10*arg1);
 					action1("decrease overtoneAddition by %d0 px");
 					break;
-
-
-				int blur        = msgOption_overtoneBlur;
-				float threshold = msgOption_overtoneThreshold;
-				float ratio     = msgOption_overtoneRatio;
-				float addition  = msgOption_overtoneAddition;
 			}
 			arg = 0;
 		}
@@ -243,6 +253,30 @@ static void specialKeyPress(int c, int x, int y) {
 		}
 	} else {
 		msgSend_consoleClear();
+		char *key="";
+		switch(c) {
+			// seek in stream
+			case GLUT_KEY_RIGHT:
+				msgSend_seekRel(5);
+				key = "right";
+				action("Seek forward by 5 seconds.");
+				break;
+			case GLUT_KEY_LEFT:
+				msgSend_seekRel(-5);
+				key = "left";
+				action("Seek backward by 5 seconds.");
+				break;
+			case GLUT_KEY_UP:
+				msgSend_seekRel(60);
+				key = "up";
+				action("Seek forward by 1 minute.");
+				break;
+			case GLUT_KEY_DOWN:
+				msgSend_seekRel(-60);
+				key = "down";
+				action("Seek backward by 1 minute.");
+				break;
+		}
 		arg = 0;
 	}
 }

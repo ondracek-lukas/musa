@@ -30,7 +30,11 @@ static void __attribute__((constructor)) init() {
 	tmTaskRegister(&rsTask, taskFunc, 2);
 }
 
-void rsReset() {
+void rsReset(bool hard) {
+	if (playerSourceType == PLAYER_SOURCE_NONE) {
+		rsTask.active = false;
+		return;
+	}
 	int newCnt = ceilf(-log2f(msgOption_minFreq/playerSampleRate) - 1);
 	if (newCnt < 1) newCnt = 1;
 	for (int i = newCnt; i < rsCnt; i++) {
@@ -47,6 +51,8 @@ void rsReset() {
 	}
 	for (int i = rsCnt; i < newCnt; i++) {
 		rsBuffers[i] = utilMalloc(sizeof(struct streamBuffer));
+	}
+	for (int i = (hard ? 1 : rsCnt); i < newCnt; i++) {
 		int streamBegin = rsBuffers[i-1]->streamBegin;
 		if (streamBegin != -1) {
 			streamBegin /= 2;
@@ -72,6 +78,12 @@ void rsReset() {
 	}
 	
 	filterContext = fftCreateFilterContext(ir, IMPULSE_RESPONSE_LEN, FFT_BLOCK_LEN_LOG2);
+}
+void rsResetHard() {
+	rsReset(true);
+}
+void rsResetSoft() {
+	rsReset(false);
 }
 
 int rsContainsCnt(double posSec, int radius) {
@@ -131,17 +143,16 @@ static inline bool tryProcess(int i, bool forward) {
 }
 
 static bool taskFunc() {
-	double visibleBeginSec = playerPos/playerSampleRate - msgOption_visibleBefore/msgOption_outputRate;
-	double visibleEndSec   = playerPos/playerSampleRate + msgOption_visibleAfter/msgOption_outputRate;
+	double visibleBeginSec = playerPosSec - msgOption_visibleBefore/msgOption_outputRate;
+	double visibleEndSec   = playerPosSec + msgOption_visibleAfter/msgOption_outputRate;
 
 	int processedCnt = 0;
 	for (int i = rsCnt-1; (i > 0) && (processedCnt < BLOCKS_PER_TASK); i--) {
 		if (!__sync_bool_compare_and_swap(&writeLocks[i], 0, 1)) continue;
 		int visibleBegin = visibleBeginSec * rsRates[i];
 		int visibleEnd   = visibleEndSec   * rsRates[i];
-		if (!sbContainsBegin(rsBuffers[i], visibleEnd) && !sbContainsEnd(rsBuffers[i], visibleBegin)) {
+		if (!sbContainsBegin(rsBuffers[i], visibleEnd) || !sbContainsEnd(rsBuffers[i], visibleBegin)) {
 			sbReset(rsBuffers[i], (visibleBegin+visibleEnd)/2, rsBuffers[i]->streamBegin, rsBuffers[i]->streamEnd);
-			printf("resampler: %d reset\n", i); // XXX
 		}
 		bool forwardPreferred = (visibleBegin - rsBuffers[i]->begin > rsBuffers[i]->end - visibleEnd);
 		for (; processedCnt < BLOCKS_PER_TASK; processedCnt++) {
