@@ -4,6 +4,10 @@
 #include <string.h>
 #include <stdarg.h>
 #include "taskManager.h"
+#include "player.h"
+#include "messages.h"
+#include "drawerScale.h"
+#include <math.h>
 
 struct taskInfo consoleStatusTask = TM_TASK_INITIALIZER(true, true);
 
@@ -25,10 +29,6 @@ static __attribute__((format(printf,1,2))) void append(const char *fmt, ...) {
 	va_end(args);
 }
 
-#include "player.h"
-#include "messages.h"
-#include "drawerScale.h"
-#include <math.h>
 
 
 char *consoleStatusGet() {
@@ -86,6 +86,7 @@ char *consoleStatusGet() {
 				}
 
 			}
+
 		} else {
 			append("nothing opened");
 		}

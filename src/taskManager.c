@@ -115,7 +115,7 @@ static __attribute__((constructor)) void init() {
 }
 
 void tmResume() {
-	pthread_cond_broadcast(&cond);
+	pthread_cond_broadcast(&cond); // XXX don't call when any thread is running
 }
 
 __attribute__((destructor)) void tmStop() {

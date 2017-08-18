@@ -12,6 +12,7 @@ extern double dsColumnToPlayerPosMultiplier;
 
 extern void dsResetTimeScale();
 
+/*
 static inline int dsColumnToPlayerPos(int column) {
 	return column * dsColumnToPlayerPosMultiplier;
 }
@@ -19,6 +20,7 @@ static inline int dsColumnToPlayerPos(int column) {
 static inline int dsPlayerPosToColumn(int playerPos) {
 	return playerPos / dsColumnToPlayerPosMultiplier;
 }
+*/
 
 
 // --- TONE SCALE ---

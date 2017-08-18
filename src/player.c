@@ -40,8 +40,8 @@ void playerOpenDevice(double sampleRate) {
 	playerSource = source;
 	playerSourceType = PLAYER_SOURCE_DEVICE;
 
-	playerPlay();
 	msgSend_newSource();
+	playerPlay();
 }
 
 void playerOpen(char *filename) {
@@ -63,8 +63,8 @@ void playerOpen(char *filename) {
 	playerSource = source;
 	playerSourceType = PLAYER_SOURCE_FILE;
 
-	playerPlay();
 	msgSend_newSource();
+	playerPlay();
 }
 
 

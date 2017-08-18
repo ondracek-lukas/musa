@@ -3,15 +3,9 @@
 #include "drawerBuffer.h"
 
 
-struct dbufferS dbuffer;
+struct dbufferS dbuffer = {0, -DRAWER_BUFFER_SIZE, 0};
 
 
-void dbufferInit() {
-	dbuffer.columnLen=0;
-	dbuffer.begin=-DRAWER_BUFFER_SIZE;
-	dbuffer.end=0;
-	dbuffer.dataInvalid=true;
-}
 void dbufferRealloc(size_t columnLen) {
 	dbuffer.columnLen=columnLen;
 	free(dbuffer.data);
@@ -22,8 +16,6 @@ void dbufferRealloc(size_t columnLen) {
 		dbufferPrecision(i) = 0;
 		dbufferDrawn(i) = false;
 	}
-	__sync_synchronize();
-	dbuffer.dataInvalid=false;
 	__sync_synchronize();
 }
 void dbufferMove(int offset) { // to be called only from the main thread

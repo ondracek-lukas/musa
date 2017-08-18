@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <string.h>
 #include "logFft.h"
+#include "drawer.h"
 #include "drawerScale.h"
 #include "drawerBuffer.h"
 #include "player.h"
@@ -19,6 +20,7 @@
 static int
 	 processedFrom[MAX_PRECISION_LEVELS],
 	 processedTo[MAX_PRECISION_LEVELS];
+#define PROCESSED_UPDATE_PERIOD 16 // update processedFrom, processedTo every PERIOD success
 static unsigned char minPrecision, maxPrecision;
 static int fftBlockLen;
 
@@ -77,7 +79,7 @@ static void createColumn(int column, float *logFftResult) { // assert: logFftRes
 // --- INIT FUNCTIONS ---
 
 static bool taskFunc();
-void dmvInit() {
+static __attribute__((constructor)) void init() {
 	tmTaskRegister(&dmvTask, taskFunc, 1);
 
 	// colorScale init
@@ -117,7 +119,7 @@ void dmvReset() { // pause dmvTask and drawerMainTask before
 		return;
 	}
 	dbufferRealloc(msgOption_columnLen);
-	int pos = dsPlayerPosToColumn(playerPos);
+	int pos = playerPosSec * msgOption_outputRate;
 	for (int i=0; i<MAX_PRECISION_LEVELS; i++) {
 		processedTo[i] = processedFrom[i] = pos;
 	}
@@ -129,51 +131,6 @@ void dmvReset() { // pause dmvTask and drawerMainTask before
 	minPrecision = 1;
 	maxPrecision = rsCnt;
 	dmvTask.active = true;
-}
-
-void dmvRefresh() {
-	if (!tmTaskEnter(&dmvTask)) return;
-	if ((processedTo[maxPrecision] < dbuffer.begin) || (processedFrom[maxPrecision] > dbuffer.end)) {
-		int pos = dsPlayerPosToColumn(playerPos);
-		for (unsigned char p = minPrecision; p <= maxPrecision; p++) {
-			processedTo[p] = processedFrom[p] = pos;
-		}
-	} else {
-		unsigned char p = maxPrecision;
-		while (true) {
-			unsigned char p2 = dbufferPrecision(processedTo[p]);
-			if ((processedTo[p] >= dbuffer.end) || (dbufferState(processedTo[p]) < DBUFF_READY)) p2 = 0;
-			while ((p > p2) && (p > minPrecision)) {
-				if (processedTo[p-1] < processedTo[p]) {
-					processedTo[p-1] = processedTo[p];
-				}
-				p--;
-			}
-			if (p2 < minPrecision) break;
-			processedTo[p]++;
-		}
-		for (p = minPrecision; (p <= maxPrecision) && (processedTo[p] > dbuffer.end); p++) {
-			processedTo[p] = dbuffer.end;
-		}
-
-		p = maxPrecision;
-		while (true) {
-			unsigned char p2 = dbufferPrecision(processedFrom[p]-1);
-			if ((processedFrom[p] <= dbuffer.begin) || (dbufferState(processedFrom[p]-1) < DBUFF_READY)) p2 = 0;
-			while ((p > p2) && (p > minPrecision)) {
-				if (processedFrom[p-1] > processedFrom[p]) {
-					processedFrom[p-1] = processedFrom[p];
-				}
-				p--;
-			}
-			if (p2 < minPrecision) break;
-			processedFrom[p]--;
-		}
-		for (p = minPrecision; (p <= maxPrecision) && (processedTo[p] < dbuffer.begin); p++) {
-			processedFrom[p] = dbuffer.begin;
-		}
-	}
-	tmTaskLeave(&dmvTask);
 }
 
 
@@ -210,16 +167,59 @@ static inline bool tryProcessLogFft(
 }
 
 static bool taskFunc() {
+	static int locked = 0;
+#define TRY_LOCK __sync_bool_compare_and_swap(&locked, 0, 1)
+#define UNLOCK locked = 0
 
-	int bufferPos = dsPlayerPosToColumn(playerPos);
-	int visibleTo = bufferPos+msgOption_visibleAfter;
+
+	int bufferPos = playerPosSec * msgOption_outputRate;
+	int visibleTo = drawerVisibleEnd * msgOption_outputRate;
+	int visibleFrom = drawerVisibleBegin * msgOption_outputRate;
+	int visibleArea = visibleTo - visibleFrom;
+
+	{
+		int moveBy = (visibleFrom + visibleTo) / 2 - (dbuffer.begin + dbuffer.end) / 2;
+		if ((abs(moveBy) > DRAWER_BUFFER_SIZE/8) && TRY_LOCK) {
+			moveBy = (visibleFrom + visibleTo) / 2 - (dbuffer.begin + dbuffer.end) / 2;
+			if (abs(moveBy) > DRAWER_BUFFER_SIZE/8) {
+				dbufferMove(moveBy);
+			}
+			UNLOCK;
+		}
+	}
+
 	if (visibleTo > dbuffer.end) visibleTo = dbuffer.end;
-	int visibleFrom = bufferPos-msgOption_visibleBefore;
 	if (visibleFrom < dbuffer.begin) visibleFrom = dbuffer.begin;
 	if (visibleFrom < 0) visibleFrom = 0;
 
+	if (visibleTo < visibleFrom) {
+		return false;
+	}
+
+	// update processed
+	if (((visibleTo < processedFrom[maxPrecision]) && (bufferPos + visibleArea/2 < processedFrom[maxPrecision])) ||
+			((visibleFrom > processedTo[maxPrecision]) && (bufferPos - visibleArea/2 > processedTo[maxPrecision]))) {
+		if (TRY_LOCK) {
+			for (int p = minPrecision; p <= maxPrecision; p++) {
+				processedFrom[p] = processedTo[p] = bufferPos;
+			}
+			UNLOCK;
+		}
+	}
+
+	// XXX  optimize the function till this point
+
 	bool logFftProcessed = false;
-	float *buffer = malloc(dbuffer.columnLen * sizeof(float));
+	static __thread float *buffer = NULL;
+	{
+		static __thread int bufferSize = 0;
+		if (bufferSize != dbuffer.columnLen) {
+			free(buffer);
+			bufferSize = dbuffer.columnLen;
+			buffer = utilMalloc(bufferSize * sizeof(float));
+		}
+	}
+
 
 	int pos;
 	unsigned char precision;
@@ -281,124 +281,33 @@ static bool taskFunc() {
 	}
 
 	if (!logFftProcessed) {
-		free(buffer);
 		return false;
 	}
 
 	if (!dbufferTransactionCheck(pos)) {
 		dbufferTransactionAbort(pos);
-		free(buffer);
 		return false;
 	}
 
 	createColumn(pos, buffer);
-	free(buffer);
 
-	bool ret = dbufferTransactionCommit(pos, precision);
-	return ret;
-}
-
-
-/*
-void drawerAddColumns(float *buff, size_t columns, size_t drawingOffset) { // column-oriented
-	if (!buffer)
-		return;
-	for (size_t x=0; x<columns; x++) {
-		float avg=0;
-		bool keyboardWhite;
-		double keyboardFreq=keyboardMinFreq;
-		unsigned keyboardTone=keyboardMinTone;
-		for (size_t i=0; i<inputColumnLen; i++)
-			avg+=buff[x*inputColumnLen+i];
-		avg/=inputColumnLen;
-		for (size_t y=0; y<height; y++) {
-			float value;
-			double freq;
-			double dblIndex=scalePosToInputIndex(y);
-			double ratio=dblIndex;
-			freq=scaleInputIndexToFreq(dblIndex);
-			size_t index=(int)ratio;
-			ratio-=index;
-			value=buff[x*inputColumnLen+index]*(1-ratio) + buff[x*inputColumnLen+index+1]*ratio; // ?
-			if (colorOvertones) {
-				float odd=1, even=1, none=1, coef;
-				unsigned tmp;
-				if (scaleFreqToInputIndex(freq*2)<=inputColumnLen)
-					odd+= (buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*2))]-avg)/value*4;
-				if (scaleFreqToInputIndex(freq*3)<=inputColumnLen)
-					even+=(buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*3))]-avg)/value*4;
-				if (scaleFreqToInputIndex(freq*4)<=inputColumnLen)
-					odd+= (buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*4))]-avg)/value*2;
-				if (scaleFreqToInputIndex(freq*5)<=inputColumnLen)
-					even+=(buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*5))]-avg)/value*2;
-				if (scaleFreqToInputIndex(freq*6)<=inputColumnLen)
-					odd+= (buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*6))]-avg)/value;
-				if (scaleFreqToInputIndex(freq*7)<=inputColumnLen)
-					even+=(buff[x*inputColumnLen+(int)(scaleFreqToInputIndex(freq*7))]-avg)/value;
-				if (odd<1) odd=1;
-				if (even<1) even=1;
-				coef=1/(odd+even+1)*256*3;
-
-				if ((tmp=value*even*coef)<=255)
-					buffer(x+drawingOffset,y,0)=tmp;
-				else
-					buffer(x+drawingOffset,y,0)=255;
-				if ((tmp=value*none*coef)<=255)
-					buffer(x+drawingOffset,y,1)=tmp;
-				else
-					buffer(x+drawingOffset,y,1)=255;
-				if ((tmp=value*odd*coef)<=255)
-					buffer(x+drawingOffset,y,2)=tmp;
-				else
-					buffer(x+drawingOffset,y,2)=255;
-
-			} else {
-				unsigned valueI=value*1024;
-				if (valueI>=1024)
-					valueI=1023;
-				valueI*=3;
-				buffer(x+drawingOffset,y,0)=colorScale[valueI];
-				buffer(x+drawingOffset,y,1)=colorScale[valueI+1];
-				buffer(x+drawingOffset,y,2)=colorScale[valueI+2];
-			}
-			if (drawKeyboard) {
-				if (keyboardFreq>freq) {
-					buffer(x+drawingOffset,y,0)=(1-KEYBOARD_ALPHA)*buffer(x+drawingOffset,y,0)+KEYBOARD_ALPHA*(keyboardWhite*128+!keyboardTone*127);
-					buffer(x+drawingOffset,y,1)=(1-KEYBOARD_ALPHA)*buffer(x+drawingOffset,y,1)+KEYBOARD_ALPHA*(keyboardWhite*128+!keyboardTone*127);
-					buffer(x+drawingOffset,y,2)=(1-KEYBOARD_ALPHA)*buffer(x+drawingOffset,y,2)+KEYBOARD_ALPHA*(keyboardWhite*128+!keyboardTone*127);
-				} else {
-					while (keyboardFreq<=freq) {
-						keyboardFreq*=pow(2,1.0/12);
-						keyboardTone=(keyboardTone+1)%12;
-					}
-					switch (keyboardTone) {
-						case 1:
-						case 3:
-						case 6:
-						case 8:
-						case 10:
-							keyboardWhite=false;
-							break;
-						default:
-							keyboardWhite=true;
-							break;
-					}
+	bool success = dbufferTransactionCommit(pos, precision);
+	if (success) {
+		static int counter = 0;
+		if (__sync_add_and_fetch(&counter, 1) % PROCESSED_UPDATE_PERIOD == 0) {
+			if (TRY_LOCK) {
+				int p    = maxPrecision;
+				int to   = processedTo[p];
+				int from = processedFrom[p];
+				for (; p >= minPrecision; p--) {
+					for (; dbufferExists(to)   && (dbufferPrecision(to)   >= p); to++);
+					processedTo[p]   = to;
+					for (; dbufferExists(from) && (dbufferPrecision(from) >= p); from--);
+					processedFrom[p] = from;
 				}
-			}
-		}
-		if (drawScaleLines) {
-			for (size_t i=0; i<scaleLabelsCnt; i++) {
-				size_t y=scaleLabels[i].pos;
-				float alpha=
-					scaleLabels[i].main*SCALE_LINES_ALPHA_MAIN+
-					(1-scaleLabels[i].main)*SCALE_LINES_ALPHA_OTHER;
-				buffer(x+drawingOffset,y,0)=(1-alpha)*buffer(x+drawingOffset,y,0);
-				buffer(x+drawingOffset,y,1)=(1-alpha)*buffer(x+drawingOffset,y,1)+alpha*255;
-				buffer(x+drawingOffset,y,2)=(1-alpha)*buffer(x+drawingOffset,y,2);
+				UNLOCK;
 			}
 		}
 	}
-	rowBegin=(rowBegin+columns+drawingOffset+width) % width;
-	newColumns+=columns;
+	return success;
 }
-*/

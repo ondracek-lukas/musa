@@ -8,6 +8,7 @@
 #include "util.h"
 #include "taskManager.h"
 #include "fft.h"
+#include "drawer.h"
 
 #define FFT_BLOCK_LEN_LOG2 8
 #define IMPULSE_RESPONSE_LEN 129  // assert: is odd
@@ -143,8 +144,8 @@ static inline bool tryProcess(int i, bool forward) {
 }
 
 static bool taskFunc() {
-	double visibleBeginSec = playerPosSec - msgOption_visibleBefore/msgOption_outputRate;
-	double visibleEndSec   = playerPosSec + msgOption_visibleAfter/msgOption_outputRate;
+	double visibleBeginSec = drawerVisibleBegin;
+	double visibleEndSec   = drawerVisibleEnd;
 
 	int processedCnt = 0;
 	for (int i = rsCnt-1; (i > 0) && (processedCnt < BLOCKS_PER_TASK); i--) {

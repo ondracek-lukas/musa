@@ -7,9 +7,6 @@
 
 extern struct taskInfo dmvTask;
 
-extern void dmvInit();
-extern void dmvCreatePreview(int column);
 extern void dmvReset(void); // pause dmvTask and drawerMainTask before
-extern void dmvRefresh();
 
 #endif

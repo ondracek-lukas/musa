@@ -15,7 +15,6 @@ struct dbufferS {
 	enum {DBUFF_INVALID=-1, DBUFF_READY=0, DBUFF_PROCESSING} state[DRAWER_BUFFER_SIZE];
 	unsigned char precision[DRAWER_BUFFER_SIZE];
 	bool drawn[DRAWER_BUFFER_SIZE];
-	bool dataInvalid;
 	unsigned char *data;
 	unsigned char *columnOverlay;
 };

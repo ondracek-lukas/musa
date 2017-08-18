@@ -153,16 +153,6 @@ options => {
 		pause      => [qw( drawerMain dmv )],
 		call       => [qw( dmvReset dsResetToneScale )],
 	},
-	visibleBefore => {
-		type       => "int",
-		pause      => [qw( drawerMain dmv )],
-		call       => [qw( dmvReset dsResetToneScale )],
-	},
-	visibleAfter => {
-		type       => "int",
-		pause      => [qw( drawerMain dmv )],
-		call       => [qw( dmvReset dsResetToneScale )],
-	},
 	a1Freq => {
 		type       => "double",
 		pause      => [qw( drawerMain dmv )],
@@ -172,7 +162,7 @@ options => {
 		validCond  => "arg0 > 0",
 		unit       => "Hz",
 	},
-	minFreq => {
+	minFreq => {   # XXX  check value on newSource
 		type       => "double",
 		pause      => [qw( drawerMain dmv rs )],
 		call       => [qw( dmvReset dsResetToneScale rsResetSoft )],
@@ -187,7 +177,7 @@ options => {
 		call       => [qw( dmvReset dsResetToneScale rsResetSoft )],
 		aliases    => [qw( highesttone ht )],
 		default    => 22000,
-		validCond  => "(arg0 >= 2*msgOption_minFreq) && (arg0 < playerSampleRate/2)",
+		validCond  => "arg0 >= 2*msgOption_minFreq",
 		unit       => "Hz",
 	},
 	outputRate => {
@@ -199,6 +189,18 @@ options => {
 		validCond  => "(arg0 > 0) && (arg0 <= playerSampleRate)",
 		unit       => "Hz",
 	},
+	showGrid => {
+		type       => "bool",
+		aliases    => [qw( showgrid sg )],
+		default    => "true",
+		pause      => [qw( drawerMain dmv )],
+		call       => [qw( drawerReset )],
+	},
+	showCursor => {
+		type       => "bool",
+		aliases    => [qw( showcursor sc )],
+		default    => "true",
+	},
 	cursorPos => {
 		type       => "double",
 		pause      => [qw( drawerMain dmv )],
@@ -207,6 +209,25 @@ options => {
 		default    => 50,
 		validCond  => "(arg0 >= 0) && (arg0 <= 100)",
 		unit       => "%",
+	},
+	forceCursorPos => {
+		type       => "bool",
+		pause      => [qw( drawerMain )],
+		call       => [qw( drawerReset )],
+		aliases    => [qw( forcecursorpos fcp )],
+		default    => "false",
+	},
+	reverseDirection => {  # XXX  create timedirection option (left,right,up,down) for changing this
+		type       => "bool",
+		aliases    => [qw( reversedirection rd )],
+		pause      => [qw( drawerMain )],
+		call       => [qw( drawerReset )],
+	},
+	swapAxes => {          # XXX  use timedirection
+		type       => "bool",
+		aliases    => [qw( swapaxes sa )],
+		pause      => [qw( drawerMain )],
+		call       => [qw( drawerReset )],
 	},
 	filterOvertones => {
 		type       => "bool",

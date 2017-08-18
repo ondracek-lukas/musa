@@ -62,7 +62,7 @@ bool logFftProcess(double posSec, int blocksCnt, float *outputBuffer) {
 			// curBlockMaxFreq: 1.0 >> j
 			double indexD = blockLen * freq / rsRates[j];
 			int index = indexD; indexD -= index;
-			if (index*2 >= blockLen) { // maybe >= ?
+			if (index*2 >= blockLen) {
 				last--;
 				continue;
 			}
@@ -77,7 +77,11 @@ bool logFftProcess(double posSec, int blocksCnt, float *outputBuffer) {
 
 			// break; // XXX
 		}
-		outputBuffer[i] = value;
+		if (value == FLT_MAX) {
+			outputBuffer[i] = 0;
+		} else {
+			outputBuffer[i] = value;
+		}
 		freq *= freqMultPerItem;
 	}
 	free(fftBlocks);

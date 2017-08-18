@@ -20,7 +20,7 @@ obj/fft.o: src/util.h
 obj/logFft.o: src/util.h src/fft.h src/resampler.h
 obj/drawer.o: src/drawer*.h src/player.h $(messages) src/taskManager.h src/console*.h src/util.h
 obj/drawerScale.o: src/drawerBuffer.h src/util.h src/player.h $(messages)
-obj/drawerMusicVisualiser.o: src/drawerBuffer.h src/drawerScale.h src/player.h src/util.h src/logFft.h src/taskManager.h src/overtoneFilter.h $(messages) src/resampler.h
+obj/drawerMusicVisualiser.o: src/drawerBuffer.h src/drawerScale.h src/player.h src/util.h src/logFft.h src/taskManager.h src/overtoneFilter.h $(messages) src/resampler.h src/drawer.h
 obj/taskManager.o: src/util.h
 
 obj/hid.o: src/consoleIn.h $(messages) src/player.h src/consoleOut.h
@@ -29,10 +29,10 @@ obj/consoleOut.o: src/util.h $(messages)
 obj/consoleStatus.o: src/util.h src/player.h src/messages.h src/drawerScale.h src/taskManager.h
 obj/commandParser.o: $(messages) src/util.h
 obj/messages.o: src/messagesList.gen.c $(messages) src/taskManager.h src/util.h
-obj/resampler.o: src/streamBuffer.h src/player.h src/util.h src/taskManager.h src/fft.h $(messages)
+obj/resampler.o: src/streamBuffer.h src/player.h src/util.h src/taskManager.h src/fft.h $(messages) src/drawer.h
 obj/player.o: src/taskManager.h src/util.h $(messages) src/playerFile.h src/playerDevice.h src/consoleOut.h
 obj/playerFile.o: src/taskManager.h src/util.h $(messages) src/consoleOut.h src/player.h src/playerDevice.h
-obj/playerDevice.o: src/taskManager.h src/util.h $(messages) src/consoleOut.h src/player.h
+obj/playerDevice.o: src/taskManager.h src/util.h $(messages) src/consoleOut.h src/player.h $(messages) src/streamBuffer.h
 obj/overtoneFilter.o: $(messages) src/drawerScale.h src/util.h
 obj/streamBuffer.o:
 obj/util.o:
