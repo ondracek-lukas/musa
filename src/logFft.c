@@ -74,8 +74,6 @@ bool logFftProcess(double posSec, int blocksCnt, float *outputBuffer) {
 			if (newValue < value) {
 				value = newValue;
 			}
-
-			// break; // XXX
 		}
 		if (value == FLT_MAX) {
 			outputBuffer[i] = 0;

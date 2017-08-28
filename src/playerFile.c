@@ -53,12 +53,76 @@ static __attribute__((destructor)) void fin() {
 }
 
 #define ERR(...) {consolePrintErrMsg(__VA_ARGS__); playerFileClose(); return false; }
+static bool fileOpen();
+
 bool playerFileOpen(char *filename) {
+	if (avformat_open_input(&formatContext, filename, NULL, NULL) != 0)
+		ERR("Cannot open file %s.", filename);
+	return fileOpen();
+}
+struct myIOContext {
+	const char *data;
+	size_t size;
+	size_t pos;
+};
+static int myIORead(void *data, uint8_t *buf, int buf_size) {
+	struct myIOContext *context = data;
+	if (context->pos + buf_size > context->size) {
+		buf_size = context->size - context->pos;
+	}
+	memcpy(buf, context->data + context->pos, buf_size);
+	context->pos += buf_size;
+	return buf_size;
+}
+static int64_t myIOSeek(void *data, int64_t pos, int whence) {
+	struct myIOContext *context = data;
+	size_t newPos;
+	switch (whence) {
+		case SEEK_SET:
+			newPos = pos;
+			break;
+		case SEEK_CUR:
+			newPos = context->pos + pos;
+			break;
+		case SEEK_END:
+			newPos = context->size + pos;
+			break;
+		case AVSEEK_SIZE:
+			return context->size;
+		default:
+			return -1;
+	}
+	if ((newPos >= 0) && (newPos <= context->size)) {
+		context->pos = newPos;
+		return context->pos;
+	} else {
+		return -1;
+	}
+}
+bool playerDataOpen(char *filename, const char *data, size_t size) {
+	struct myIOContext *context = utilMalloc(sizeof(struct myIOContext));
+	context->data = data;
+	context->size = size;
+	context->pos  = 0;
+
+	size_t bufferSize = 4096;
+	uint8_t *buffer = av_malloc(bufferSize);
+	AVIOContext *ioContext = avio_alloc_context(
+			buffer, bufferSize,
+			0, context, myIORead, 0, myIOSeek);
+	formatContext = avformat_alloc_context();
+	formatContext->pb = ioContext;
+	formatContext->flags |= AVFMT_FLAG_CUSTOM_IO;
 
 	if (avformat_open_input(&formatContext, filename, NULL, NULL) != 0)
 		ERR("Cannot open file %s.", filename);
+	return fileOpen();
+}
+
+static bool fileOpen() { // needs formatContext to be open
+
 	if (avformat_find_stream_info(formatContext, NULL) < 0) {
-		ERR("Cannot find stream information in file %s.", filename);
+		ERR("Cannot find stream information.");
 	}
 	streamIndex = -1;
 	for (int i=0; i < formatContext->nb_streams; i++) {
@@ -71,7 +135,7 @@ bool playerFileOpen(char *filename) {
 		}
 	}
 	if (streamIndex < 0) {
-		ERR("No audio stream found in file %s.", filename);
+		ERR("No audio stream found.");
 	}
 
 	AVCodec *codec = avcodec_find_decoder(formatContext->streams[streamIndex]->codecpar->codec_id);
@@ -122,18 +186,30 @@ bool playerFileOpen(char *filename) {
 #undef ERR
 
 
-void playerFileClose() {
+static void fileClose() {
 	playerFileTask.active = false;
 	playerFileThreadTask.active = false;
 	if (codecContext) {
 		avcodec_close(codecContext);
 		avcodec_free_context(&codecContext);
 	}
+	if (swrContext) {
+		swr_free(&swrContext);
+	}
+}
+void playerFileClose() {
+	fileClose();
 	if (formatContext) {
 		avformat_close_input(&formatContext);
 	}
-	if (swrContext) {
-		swr_free(&swrContext);
+}
+void playerDataClose() {
+	fileClose();
+	if (formatContext) {
+		free(formatContext->pb->opaque);
+		av_free(formatContext->pb->buffer);
+		av_free(formatContext->pb);
+		avformat_close_input(&formatContext);
 	}
 }
 

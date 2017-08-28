@@ -21,6 +21,7 @@
 #include "util.h"
 #include "taskManager.h"
 #include "messages.h"
+#include "resources.gen.h"
 
 
 #define FRAME_DELAY 10   // ms
@@ -34,13 +35,17 @@ static GLfloat stringColorBlue[]  = {0.5f,  0.5f, 1.0f};
 static GLfloat stringColorGray[]  = {0.5f,  0.5f, 0.5f};
 
 #define STATUS_LINE_HEIGHT 20
+#define CHAR_WIDTH          9
+#define CHAR_HEIGHT        19
+#define CHAR_DEPTH          4
+#define CHAR_GLUT_FONT GLUT_BITMAP_9_BY_15
 
 struct taskInfo drawerMainTask    = TM_TASK_INITIALIZER(true, true);
 struct taskInfo drawerConsoleTask = TM_TASK_INITIALIZER(true, true);
 
 double drawerVisibleBegin=0, drawerVisibleEnd=0; // sec
 
-static size_t width=0, height=0, soundHeight=0, consoleHeight=STATUS_LINE_HEIGHT;
+static int width=0, height=0, soundHeight=0, consoleHeight=STATUS_LINE_HEIGHT;
 static int columnsCnt = 0, firstColumn = 0, visibleColumnsCnt = 0, cursorPos = 0;
 #define screenColumn(column) ((msgOption_reverseDirection ? visibleColumnsCnt - ((column)-firstColumn) - 1 : (column)-firstColumn) + (msgOption_swapAxes * STATUS_LINE_HEIGHT))
 static bool *drawnColumns = NULL;
@@ -49,6 +54,9 @@ static bool cursorDrawn = false;
 
 static bool repaintInterrupted = false;
 static bool repaintAllColumns = false;
+static bool showLogo = false;
+static int  introX, introY;
+static char *introStr = NULL;
 
 
 static void onTimer();
@@ -64,6 +72,7 @@ void drawerInit() {
 }
 
 static void onReshape(int w, int h) {
+	showLogo = false;
 	width=w;
 	height=h;
 
@@ -79,10 +88,13 @@ static void onReshape(int w, int h) {
 
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	drawerReset();
+	drawerMainTask.active = false;
+	msgSend_drawerReset();
 }
 
 void drawerReset() {
+	drawerMainTask.active = true;
+
 	int screenCenterColumn=width*msgOption_cursorPos/100;
 
 	soundHeight = height - STATUS_LINE_HEIGHT;
@@ -111,6 +123,76 @@ void drawerReset() {
 
 	for (int i = firstColumn; i < firstColumn + columnsCnt; i++) {
 		drawnColumns(cursorPos) = false;
+	}
+
+	if ((width <= 0) || (height <= 0) || (playerSourceType != PLAYER_SOURCE_LOGO)) {
+		showLogo = false;
+		if (introStr) {
+			introStr[0] = '\0';
+		}
+	} else {
+
+		if ((playerSourceType == PLAYER_SOURCE_LOGO) && !showLogo) {
+			int versionCnt = 0;
+			for (const char *strI = resources_intro_txt; *strI; strI++) {
+				if (*strI == 'V'-'@') versionCnt++;
+			}
+			char *newIntroStr = introStr;
+			utilStrRealloc(&newIntroStr, NULL,
+					sizeof(resources_intro_txt) + versionCnt * sizeof(resources_VERSION));
+			char *str = newIntroStr;
+			for (const char *strI = resources_intro_txt; *strI; strI++) {
+				if (*strI == 'V'-'@') {
+					for (const char *strV = resources_VERSION; *strV; strV++) {
+						*(str++) = *strV;
+					}
+				} else {
+					*(str++) = *strI;
+				}
+			}
+			*str = '\0';
+
+			int strWidth, strHeight;
+			double logoWidth, logoHeight, wholeHeight;
+			const double soundHeight = height - STATUS_LINE_HEIGHT;
+			str--;
+			strWidth  = consoleStrWidth(newIntroStr)  * CHAR_WIDTH;
+			if (strWidth < width - 20) {
+				logoWidth = strWidth;
+				logoHeight = logoWidth / 4;
+				while (str > newIntroStr) {
+					strHeight = consoleStrHeight(newIntroStr) * CHAR_HEIGHT;
+					wholeHeight = strHeight + logoHeight + 40;
+
+					if (wholeHeight < soundHeight) {
+						break;
+					}
+
+					while ((str > newIntroStr) && ((*str != '\n') || (*(str+1) != '\n'))) str--;
+					*str = '\0';
+				}
+			} else {
+				str = newIntroStr;
+				*str = '\0';
+			}
+			if (str <= newIntroStr) {
+				logoWidth = width - 20;
+				if (logoWidth < 20) logoWidth = width;
+				logoHeight = logoWidth / 4;
+				if (logoHeight > soundHeight - 20) {
+					logoHeight = soundHeight - 20;
+					logoWidth  = logoHeight * 4;
+				}
+				playerResetLogoSize(logoWidth, logoHeight/soundHeight, 0.5);
+			} else {
+				introX = (width-strWidth)/2;
+				introY = (soundHeight-wholeHeight)/2 + strHeight + STATUS_LINE_HEIGHT;
+				playerResetLogoSize(logoWidth, logoHeight/soundHeight,
+					(introY + logoHeight/2)/soundHeight);
+			}
+			showLogo = true;
+			introStr = newIntroStr;
+		}
 	}
 }
 
@@ -144,13 +226,15 @@ static void copyRect(int x1, int y1, int x2, int y2) { // right and top boudary 
 	glCopyPixels(x1, y1, x2-x1, y2-y1, GL_COLOR);
 }
 
-static void drawString(char *str, int x, int y) {
+static void drawString(const char *str, int x, int y) {
+	y -= CHAR_HEIGHT - CHAR_DEPTH;
+	int origX = x;
 	glRasterPos2i(x, y);
 
 	while (*str) {
 		switch (*str) {
 			case consoleSpecialBack:
-				x-=9;
+				x -= CHAR_WIDTH;
 				glRasterPos2i(x, y);
 				break;
 			case consoleSpecialColorNormal:
@@ -173,10 +257,14 @@ static void drawString(char *str, int x, int y) {
 				glColor3fv(stringColorGray);
 				glRasterPos2i(x, y);
 				break;
+			case '\n':
+				x = origX;
+				y -= CHAR_HEIGHT;
+				glRasterPos2i(x, y);
 				break;
 			default:
-				x+=9;
-				glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *str);
+				x += CHAR_WIDTH;
+				glutBitmapCharacter(CHAR_GLUT_FONT, *str);
 				break;
 		}
 		str++;
@@ -187,7 +275,7 @@ static struct utilStrList *drawStringMultiline(struct utilStrList *lines, int co
 	int i;
 	for (i=0; lines && (!count || i<count); i++, lines=lines->next) {
 		drawString(lines->str, x, y);
-		y-=19;
+		y -= CHAR_HEIGHT;
 	}
 	return lines;
 }
@@ -209,7 +297,7 @@ static void drawConsole(bool force) {
 
 		if (count < 1) count = 1;
 		glColor4f(0, 0, 0, 1);
-		int newConsoleHeight = 19*count+1;
+		int newConsoleHeight = CHAR_HEIGHT*count+1;
 		if (newConsoleHeight < consoleHeight) {
 			repaintAllColumns = true;
 		}
@@ -218,23 +306,23 @@ static void drawConsole(bool force) {
 
 		glColor3fv(stringColor);
 		if (lines) {
-			drawStringMultiline(lines, 0, 1, 19*count-14);
+			drawStringMultiline(lines, 0, 1, CHAR_HEIGHT*count+1);
 		}
 		if (consoleIsOpen()) {
 			int lineSize = consoleStrWidth(consoleInputLine);
 			if (lineSize>consoleSize) consoleSize = lineSize;
-			drawString(consoleInputLine, 1, 5);
+			drawString(consoleInputLine, 1, CHAR_HEIGHT+1);
 		}
 
 		char *status = consoleStatusGet();
 		glColor3fv(stringColorGreen);
-		int maxLen = width/9 - consoleSize - 4;
+		int maxLen = width/CHAR_WIDTH - consoleSize - 4;
 		int statusLen = strlen(status);
 		if (statusLen <= maxLen) {
-			drawString(status, width-9*statusLen-10, 5);
+			drawString(status, width-CHAR_WIDTH*statusLen-10, CHAR_HEIGHT+1);
 		} else if (maxLen-3 > 0) {
-			drawString("...", width-9*maxLen-10, 5);
-			drawString(status + statusLen - maxLen + 3, width-9*(maxLen-3)-10, 5);
+			drawString("...", width-CHAR_WIDTH*maxLen-10, CHAR_HEIGHT+1);
+			drawString(status + statusLen - maxLen + 3, width-CHAR_WIDTH*(maxLen-3)-10, CHAR_HEIGHT+1);
 		}
 		tmTaskLeave(&drawerConsoleTask);
 	} else if (!force) {
@@ -435,6 +523,10 @@ static void repaint(bool force) {
 		}
 	} else {
 		drawConsole(force);
+	}
+	if (introStr && *introStr && (consoleHeight <= STATUS_LINE_HEIGHT)) {
+		glColor3fv(stringColor);
+		drawString(introStr, introX, introY);
 	}
 	glFlush();
 	glutSwapBuffers();

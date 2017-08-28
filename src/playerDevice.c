@@ -10,7 +10,6 @@
 
 #include <portaudio.h>
 
-
 static __attribute__((constructor)) void init() {
 	if (Pa_Initialize() != paNoError) {
 		utilExitErr("Cannot initialize PortAudio.");
@@ -32,7 +31,9 @@ static int paOutputStreamCallback(
 		tmResume();
 		return paContinue;
 	} else {
-		if (!sbStreamContainsEnd(&playerBuffer, playerPos)) {
+		if (!sbStreamContainsEnd(&playerBuffer, playerPos)) { // XXX bug: playerPos == streamEnd
+			playerPos = playerBuffer.streamEnd+1;
+			playerPosSec = playerDuration;
 			msgSend_pause();
 		}
 		return paAbort;

@@ -12,8 +12,9 @@
 # Message has these attributes:
 # 	args:       Data types of arguments. (default: no arguments)
 # 	call:       Functions to be called with arguments of given types.
-# 	pause:      Tasks to be suspended before calling the functions.
+# 	pause:      Tasks (without 'Task' suffix) to be suspended before calling the functions.
 # 	aliases:    Commands to send the message from console, the first one is preferred.
+# 	enabled:    Command will be accessible from console if "true" (default), set to "false" otherwise.
 
 # Option has these attributes:
 # 	type:       Data type of the variable.
@@ -22,6 +23,7 @@
 # 	pause:      Tasks (without 'Task' suffix) to be suspended before value change and functions calls.
 # 	initCall:   Set to 1 to call the functions even for the default value.
 # 	aliases:    Names in the console, the first one is preferred.
+# 	enabled:    Option will be writable from console if "true" (default), set to "false" otherwise.
 # 	unit:       String printed after the value in the console.
 # 	validCond:  C condition verifying validity of value in 'arg0', also async.
 # 	invalidStr: Error message to be printed if validCond is false. (default: "Wrong value.")
@@ -53,6 +55,14 @@
 # to change the value use
 # 	void msgSet_NAME(TYPE newValue);
 
+# To enable/disable command/option NAME use:
+# 	void msgSetEnabled_NAME(bool value);
+# 	void msgSetOptionEnabled_NAME(bool value);
+
+# To send message / set option only if enabled use:
+# 	void msgSendUser_NAME(TYPE0 arg0, TYPE1 arg1, TYPE2 arg2);
+# 	void msgSetUser_NAME(TYPE newValue);
+
 # Aliases can be accessed via NULL-terminated array
 # 	struct msgAlias msgAliases[];
 
@@ -63,7 +73,7 @@
 # To send message with ALIAS and 3 arguments use:
 # 	:ALIAS arg1 arg2 arg3
 
-# To read all aliased values use:
+# To read all aliased options use:
 # 	:set
 # To read value of option with ALIAS use:
 # 	:set ALIAS                  (for non-bool only)
@@ -95,10 +105,14 @@ messages => {
 	},
 	newSource => {
 		pause      => [qw( consoleStatus drawerMain dmv rs )],
-		call       => [qw( dmvReset dsResetTimeScale dsResetToneScale rsResetHard )],
+		call       => [qw( drawerReset dmvReset dsResetTimeScale dsResetToneScale rsResetHard )],
+	},
+	drawerReset => {
+		pause      => [qw( drawerMain )],
+		call       => [qw( drawerReset )],
 	},
 	open => {
-		aliases    => [qw( o open )],
+		aliases    => [qw( open o )],
 		call       => [qw( playerOpen )],
 		args       => [qw( path )],
 		pause      => [qw( playerFile playerFileThread consoleStatus dmv rs )],
@@ -115,8 +129,8 @@ messages => {
 		pause      => [qw( playerFile playerFileThread consoleStatus dmv rs )],
 	},
 	close => {
-		aliases    => [qw( c close )],
-		call       => [qw( playerClose )],
+		aliases    => [qw( close c )],
+		call       => [qw( playerOpenLogo )],
 		pause      => [qw( playerFile playerFileThread consoleStatus dmv rs )],
 	},
 	play => {
@@ -162,7 +176,7 @@ options => {
 		validCond  => "arg0 > 0",
 		unit       => "Hz",
 	},
-	minFreq => {   # XXX  check value on newSource
+	minFreq => {
 		type       => "double",
 		pause      => [qw( drawerMain dmv rs )],
 		call       => [qw( dmvReset dsResetToneScale rsResetSoft )],
@@ -205,7 +219,7 @@ options => {
 		type       => "double",
 		pause      => [qw( drawerMain dmv )],
 		call       => [qw( drawerReset )],
-		aliases    => [qw( cursorpos cursorposition cp )],
+		aliases    => [qw( cursorposition cursorpos cp )],
 		default    => 50,
 		validCond  => "(arg0 >= 0) && (arg0 <= 100)",
 		unit       => "%",
@@ -214,16 +228,16 @@ options => {
 		type       => "bool",
 		pause      => [qw( drawerMain )],
 		call       => [qw( drawerReset )],
-		aliases    => [qw( forcecursorpos fcp )],
+		aliases    => [qw( forcecursorposition forcecursorpos fcp )],
 		default    => "false",
 	},
-	reverseDirection => {  # XXX  create timedirection option (left,right,up,down) for changing this
+	reverseDirection => {
 		type       => "bool",
 		aliases    => [qw( reversedirection rd )],
 		pause      => [qw( drawerMain )],
 		call       => [qw( drawerReset )],
 	},
-	swapAxes => {          # XXX  use timedirection
+	swapAxes => {
 		type       => "bool",
 		aliases    => [qw( swapaxes sa )],
 		pause      => [qw( drawerMain )],
@@ -242,7 +256,7 @@ options => {
 		default    => 2,
 		unit       => "px",
 		pause      => [qw( drawerMain dmv )],
-		aliases    => [qw( overtoneBlur ob )],
+		aliases    => [qw( overtoneblur ob )],
 	},
 	overtoneThreshold => { # XXX
 		type       => "float",

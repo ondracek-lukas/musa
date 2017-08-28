@@ -15,6 +15,7 @@
 #include "hid.h"
 #include "messages.h"
 #include "commandParser.h"
+#include "resources.gen.h"
 
 
 void mainExit() {
@@ -22,19 +23,33 @@ void mainExit() {
 }
 
 int main(int argc, char **argv){
-	double sampleRate=0;
-
 	char c;
-	bool showHelp=false;
-	char *filename = NULL;
-	while (!showHelp && ((c=getopt(argc, argv, "?i:r:c:u:a:-:")) != -1)) {
+	bool printHelp    = false;
+	bool printReadme  = false;
+	bool printCopying = false;
+	bool openDevice   = false;
+	double deviceFreq = 0;
+	char *filename    = NULL;
+
+	while (!printHelp && ((c=getopt(argc, argv, "?hrcd::-:")) != -1)) {
 		switch (c) {
 			case '?':
-				showHelp=true;
+			case 'h':
+				printHelp=true;
 				break;
-			case 'i':
-				sampleRate=strtof(optarg, &optarg);
-				if (*optarg) showHelp=true;
+			case 'r':
+				printReadme=true;
+				break;
+			case 'c':
+				printCopying=true;
+				break;
+			case 'd':
+				openDevice=true;
+				if (optarg) {
+					if (sscanf(optarg, "%lf", &deviceFreq) != 1) {
+						printHelp = true;
+					}
+				}
 				break;
 			case '-':
 				{
@@ -53,47 +68,64 @@ int main(int argc, char **argv){
 		if (optind == argc-1) {
 			filename = argv[optind];
 		} else {
-			showHelp = true;
+			printHelp = true;
 		}
 	}
 
-	if (showHelp) {
-		printf(
-			"\n"
-			"Help will be written later.\n" // XXX
-			"\n\n"
-			"This program is free software: you can redistribute it and/or modify\n"
-			"it under the terms of the GNU General Public License version 3\n"
-			"as published by the Free Software Foundation.\n"
-			"\n"
-			"This program is distributed in the hope that it will be useful,\n"
-			"but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
-			"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
-			"GNU General Public License for more details.\n"
-			"\n"
-			"You should have received a copy of the GNU General Public License\n"
-			"along with this program.  If not, see <http://www.gnu.org/licenses/>.\n"
-			"\n"
-			"Copyright (C) 2015  Lukáš Ondráček <ondracek.lukas@gmail.com>.\n"
-			"\n");
+	if (filename && openDevice) {
+		printHelp = true;
+	}
+
+	if (printHelp) {
+		int versionCnt = 0;
+		for (const char *strH = resources_help_txt; *strH; strH++) {
+			if (*strH == 'V'-'@') versionCnt++;
+		}
+		char *str = NULL;
+		utilStrRealloc(&str, NULL,
+				sizeof(resources_help_txt) + versionCnt * sizeof(resources_VERSION));
+		char *str2 = str;
+		for (const char *strH = resources_help_txt; *strH; strH++) {
+			if (*strH == 'V'-'@') {
+				for (const char *str2V = resources_VERSION; *str2V; str2V++) {
+					*(str2++) = *str2V;
+				}
+			} else {
+				*(str2++) = *strH;
+			}
+		}
+		*str2 = '\0';
+		printf("\n%s\n", str);
+		exit(0);
+	}
+	if (printReadme) {
+		printf("\n%s\n", resources_README);
+		exit(0);
+	}
+	if (printCopying) {
+		printf("\n%s\n", resources_COPYING);
 		exit(0);
 	}
 
-	// check values
-	if (sampleRate<0) {
-		printf("Wrong sampling rate.\n");
-		exit(1);
-	}
 
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE);
-	glutCreateWindow("MusA (musical analyser)");
+	glutInitWindowSize(1024, 768);
+	glutCreateWindow("MusA");
 
 	drawerInit();
 	hidInit();
 
 	if (filename) {
 		msgSend_open(filename);
+	} else if (openDevice) {
+		if (deviceFreq) {
+			playerOpenDevice(deviceFreq);
+		} else {
+			playerOpenDeviceDefault();
+		}
+	} else {
+		playerOpenLogo();
 	}
 
 	glutMainLoop();

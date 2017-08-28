@@ -2,14 +2,12 @@
 ################################################################################
 
 
-      The application is now under development and it is NOT WORKING yet.
-
-
-      The MusA (musical analyser) application aims to draw an image
+      The MusA (Musical Analyser) application aims to draw an image
       illustrating played tones, their timbres, etc.
-      to the given audio stream (file, microphone, ...).
+      in the given audio stream (file, microphone, ...),
+      see Overview section for details.
 
-      Copyright (C) 2016  Lukáš Ondráček <ondracek.lukas@gmail.com>
+      Copyright (C) 2016--2017  Lukáš Ondráček <ondracek.lukas@gmail.com>
 
       This program is free software: you can redistribute it and/or modify
       it under the terms of the GNU General Public License version 3
@@ -27,19 +25,199 @@
 ################################################################################
 
 
-Dependencies:
-  OpenGL, Freeglut 3.0, ffmpeg, PortAudio
+Overview
+--------
+
+The application opens an audio file
+or reads data from an input device (e.g. microphone).
+
+It draws spectrum of the sound
+as two dimensional image (with time and frequency axes).
+Frequency axis uses logarithmic (tone) scale to preserve constant distances
+between neighbouring semitones.
+The scale consists of lines of three types, in descending brightness:
+  * C tones,
+  * other tones without flats/sharps (white keys on piano),
+  * tones with flats/sharps (black keys on piano).
+
+By default, spectrum contains all harmonics of played tones
+(fundamental frequency and overtones).
+Overtones can be partially filtered out,
+but this feature is currently under development
+and it may not work as expected.
+
+The application uses Helmholtz pitch notation (..., C1, C, c, c1, c2, ...),
+instead of scientific pitch notation (..., C1, C2, C3, C4, C5, ...);
+concert pitch is thus denoted by a1.
+In addition, German key notation is used
+replacing sharp by -is suffix and flat by -es suffix
+(c, cis/des, d, dis/es, e, f, fis/ges, g, gis/hes, h);
+for clarity, B tone name is not used at all.
 
 
-The interface (including options and wrappers) will change in later versions.
+Dependencies and compilation
+----------------------------
+
+Run-time dependencies: OpenGL, Freeglut 3.0, ffmpeg, PortAudio
+(pulseaudio-alsa plug-in may be needed on Linux with PulseAudio).
+
+Additional compile-time dependencies: Perl5, GNU make.
+
+To compile the application on Linux just use 'make' command
+after satisfying the dependencies.
+Compiling the application for Windows was not tested yet.
 
 
-See:
-  VERSION for current version of the application
-  COPYING for full text of GNU General Public Licence version 3
+Command-line arguments
+----------------------
 
-Other information can be found on my web page
-  http://ondracek-lukas.hys.cz/projects .
+musa -h | -?  ...prints help
+musa -r       ...prints this README
+musa -c       ...prints COPYING
+musa [OPTIONS] [ FILENAME | -d[FREQUENCY] ]
+  ...runs the application opening given file
+     or input device (with specified frequency or not).
+OPTIONS are
+  --OPTION       ...activates boolean OPTION
+  --noOPTION     ...deactivates boolean OPTION
+  --OPTION=VALUE ...sets non-boolean OPTION to VALUE
+You can find the list of options below.
+
+
+Keyboard control
+----------------
+
+The application is controlled by keyboard only.
+You can use integrated command line
+(all commands starts with : character)
+or directly several mapped keys,
+some of them may be preceded by a numerical argument N (defaults to 1).
+
+:             ...open the command line
+
+j / k         ...decrease/increase lowest  shown tone by N semitones
+J / K         ...decrease/increase lowest  shown tone by N octaves
+u / i         ...decrease/increase highest shown tone by N semitones
+U / I         ...decrease/increase highest shown tone by N octaves
+
+g / t         ...decrease/increase gain by N dB
+G             ...toggle dynamic gain
+v / b         ...decrease/increase signal to noise ratio by N dB
+
+o             ...open file
+O             ...open input device
+
+space         ...play/pause
+h / l         ...seek backward/forward by N seconds
+left / right  ...seek backward/forward by 5 seconds
+down / up     ...seek backward/forward by 1 minute
+
+q             ...quit the application
+
+
+The following mapping will be changed in future versions:
+
+w             ...toggle overtone filtering
+z / a         ...decrease/increase overtoneThreshold by 10*N %
+x / s         ...decrease/increase overtoneRatio     by 10*N %
+c / d         ...decrease/increase overtoneAddition  by 10*N %
+
+
+Application commands
+--------------------
+
+:set
+  ...print values of all options
+:set OPTION?
+  ...print value of OPTION
+:set OPTION
+  ...print value of non-boolean OPTION
+  ...activate boolean OPTION
+:set noOPTION
+  ...deactivate boolean OPTION
+:set OPTION=VALUE
+  ...set value of non-boolean OPTION (VALUE is without unit)
+
+:open PATH / :o PATH
+  ...open given audio file
+:opendevice [FREQUENCY]
+  ...open input device, possibly with the specified sample rate
+:close / :c
+  ...close currently open source without closing the application
+:quit / :q
+  ...quit the application
+
+:pause
+  ...pauses playback
+:play
+  ...resumes playback
+:seekto SECONDS
+  ...seeks to the given position in a file
+:seek SECONDS
+  ...seeks relatively to current position (negative argument to seek backwards)
+
+
+Options
+-------
+
+a1freq / a1  (real number, Hz)
+  ...frequency of a1, usually 440 Hz
+highesttone / ht  (real number, Hz)
+  ...highest shown frequency
+lowesttone / lt  (real number, Hz)
+  ...lowest shown frequency
+rate / rt  (real number, Hz)
+  ...number of columns/rows drawn per second
+gain / g  (real number, dB)
+  ...amplification of the drawn amplitudes;
+     taken into account only if dynamicgain is not set
+dynamicgain / dg  (boolean)
+  ...highest amplitude in a column/row is constant (highest)
+signaltonoise / stn  (real number, dB)
+  ...signal to noise ratio, lower amplitudes are considered to be zero
+
+showgrid / sg  (boolean)
+  ...show tone scale
+showcursor / sc  (boolean)
+  ...show cursor indicating position of the player
+cursorposition / cursorpos / cp  (real number, %)
+  ...position of the cursor in the screen
+     (0% -- only unplayed sound is visible, 100% -- only played sound is visible)
+forcecursorposition / forcecursorpos / fcp  (boolean)
+  ...keep cursor its position even if there is not enough data before/after it
+reversedirection / rd  (boolean)
+  ...reverse direction of time axis (it points left/up instead of right/down)
+swapaxes / sa  (boolean)
+  ...swap time and tone axes (time axis points up/down instead of left/right)
+
+
+The following options will be changed in future versions:
+
+filterovertones / fo (boolean)
+  ...activate overtone filtering
+overtoneblur / ob  (real number, px)
+  ...how smoothly should be overtones recognized (w.r.t. near frequencies)
+overtonethreshold / ot  (real number, %)
+  ...minimal ratio of average of harmonics of an overtone to average of all overtones
+     to consider the overtone as individual tone
+overtoneratio / or  (real number, %)
+  ...maximal ratio of average of considered overtones to fundamental tone,
+     (too silent fundamental tone cannot has arbitrary loud overtones)
+overtoneaddition / oa  (real number, %)
+  ...fundamental tone amplitude can be increased by percents of its overtones
+
+
+
+See also
+--------
+
+VERSION for current version of the application,
+COPYING for full text of GNU General Public Licence version 3.
+
+Other information and recent versions can be found on my web page
+  http://ondracek-lukas.hys.cz/musa
+and/or on github repository
+  http://github.com/ondracek-lukas/musa .
 
 
 If you want to support the development of this application,

@@ -20,7 +20,6 @@
 
 // If there is no work at all, threads are suspended
 // and should be awaken by tmResume() if the situation changes.
-// (In MusA it is performed periodically from event-dispatcher thread.)
 
 // Tasks can be also executed as foreign,
 // which means that some code of a foreign thread
@@ -109,10 +108,10 @@ inline bool tmTaskEnter(struct taskInfo *task) { // to be used for foreign task 
 }
 
 
-// tmResume should be called after all functions are registered,
+// tmResume should be called after all functions are registered
 // to resume threads for the first time,
 // and then every time new work might be created.
-// It is unnecessary to call it from registered functions.
+// It is unnecessary to call it from registered functions returning true.
 void tmResume();
 
 // tmStop terminates the threads,

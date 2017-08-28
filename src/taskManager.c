@@ -20,6 +20,7 @@ static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 bool stopRequested = false;
 
 unsigned workersCnt;
+int workersRunning = 0;
 static struct workerInfo {
 	unsigned id;
 	pthread_t threadID;
@@ -109,13 +110,14 @@ static __attribute__((constructor)) void init() {
 		workers[i].id=i;
 		workers[i].sleeping=false;
 		pthread_create(&workers[i].threadID, NULL, (void*(*)(void*))worker, workers+i);
-		if (pthread_setschedparam(workers[i].threadID, SCHED_IDLE, &param))
-			printf("C\n");
+		pthread_setschedparam(workers[i].threadID, SCHED_IDLE, &param);
 	}
 }
 
 void tmResume() {
-	pthread_cond_broadcast(&cond); // XXX don't call when any thread is running
+	if (workersRunning < workersCnt) {
+		pthread_cond_broadcast(&cond);
+	}
 }
 
 __attribute__((destructor)) void tmStop() {
@@ -208,6 +210,7 @@ static void *worker(struct workerInfo *info) {
 	LOG("Worker %d started...\n", info->id);
 	PROF_WORKER_BEGIN;
 	
+	__sync_fetch_and_add(&workersRunning, 1);
 	bool allDone = true;
 	while (true) {
 
@@ -219,9 +222,11 @@ static void *worker(struct workerInfo *info) {
 			}
 			LOG("Worker %d sleeping...\n", info->id);
 			info->sleeping = true;
+			__sync_fetch_and_sub(&workersRunning, 1);
 			PROF_SLEEP_BEGIN;
 			pthread_cond_wait(&cond, &mutex);
 			PROF_SLEEP_END;
+			__sync_fetch_and_add(&workersRunning, 1);
 			info->sleeping = false;
 			LOG("Worker %d awaking...\n", info->id);
 			pthread_mutex_unlock(&mutex);
@@ -248,6 +253,7 @@ static void *worker(struct workerInfo *info) {
 			allDone = true;
 		}
 	}
+	__sync_fetch_and_sub(&workersRunning, 1);
 	PROF_WORKER_END;
 	LOG("Worker %d exitting...\n", info->id);
 }

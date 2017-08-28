@@ -16,15 +16,17 @@ double playerDuration;
 double playerSampleRate;
 enum playerSourceType {
 	PLAYER_SOURCE_NONE = 0,
+	PLAYER_SOURCE_LOGO,
 	PLAYER_SOURCE_FILE,
 	PLAYER_SOURCE_DEVICE
 } playerSourceType;
 char *playerSource;
 
-extern void playerClose();
 extern void playerOpen(char *filename);
 extern void playerOpenDevice(double sampleRate);
 extern void playerOpenDeviceDefault();
+extern void playerOpenLogo();
+extern void playerResetLogoSize(double width, double fractHeight, double fractVertPos);
 
 bool playerPlaying;
 extern void playerPlay();
