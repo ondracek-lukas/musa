@@ -7,10 +7,9 @@
 #include <stdbool.h>
 #include <dirent.h>
 
+#include "mem.h"
 #include "util.h"
 #include "messages.h"
-// #include "safe.h"
-// #include "script.h"
 
 #define isDelim(c) (((c)<'0')||(((c)>'9')&&((c)<'A'))||(((c)>'Z')&&((c)<'a'))||((c)>'z'))
 
@@ -161,7 +160,7 @@ static void *trieParse(struct trie *trie, char *str, char **strEnd) {
 	if ((!trie->params) && *cmd)
 		return 0;
 
-	utilStrRealloc(&scriptExpr, 0, strlen(trie->scriptExpr) + strlen(cmd) + 2);
+	memStrRealloc(&scriptExpr, 0, strlen(trie->scriptExpr) + strlen(cmd) + 2);
 	char *str=scriptExpr;
 	char *format=trie->scriptExpr;
 	char *flags=trie->paramsFlags;
@@ -201,7 +200,7 @@ static void *trieParse(struct trie *trie, char *str, char **strEnd) {
 }
 
 static void trieComplete(struct trie *trie, struct utilStrList **pLists, char **prefix, char **prefixEnd) {
-	utilStrRealloc(prefix, prefixEnd, 1);
+	memStrRealloc(prefix, prefixEnd, 1);
 
 	bool retCurrent=trie->data;
 	if (!retCurrent)
@@ -214,7 +213,7 @@ static void trieComplete(struct trie *trie, struct utilStrList **pLists, char **
 	if (retCurrent) {
 		**prefixEnd='\0';
 		utilStrListAddAfter(&(pLists[trie->importance]));
-		utilStrRealloc(&(pLists[trie->importance])->str, 0, strlen(*prefix)+1);
+		memStrRealloc(&(pLists[trie->importance])->str, 0, strlen(*prefix)+1);
 		strcpy((pLists[trie->importance])->str, *prefix);
 	}
 
@@ -294,7 +293,7 @@ bool cpExecute(char *cmd) {
 	if (!msg) return false;
 	int cnt=0;
 	for (enum msgDataType *type = msg->args; *type; type++) cnt++;
-	void **args = utilCalloc(cnt,sizeof(void*));
+	void **args = memCalloc(cnt,sizeof(void*));
 	void **arg = args;
 	bool err=false;
 	for (enum msgDataType *type = msg->args; !err && *type; type++, arg++) {
@@ -307,17 +306,17 @@ bool cpExecute(char *cmd) {
 		switch (*type) {
 			case MSG_INT:
 			case MSG_BOOL:
-				*arg = utilMalloc(sizeof(int));
+				*arg = memMalloc(sizeof(int));
 				if (sscanf(cmd, "%d%n", *arg, &len) != 1) err=true;
 				cmd += len;
 				break;
 			case MSG_FLOAT:
-				*arg = utilMalloc(sizeof(float));
+				*arg = memMalloc(sizeof(float));
 				if (sscanf(cmd, "%f%n", *arg, &len) != 1) err=true;
 				cmd += len;
 				break;
 			case MSG_DOUBLE:
-				*arg = utilMalloc(sizeof(double));
+				*arg = memMalloc(sizeof(double));
 				if (sscanf(cmd, "%lf%n", *arg, &len) != 1) err=true;
 				cmd += len;
 				break;
@@ -337,8 +336,8 @@ bool cpExecute(char *cmd) {
 						break;
 				}
 				for (char *c=cmd; *c && (*c != delim); c++) len++;
-				*arg = utilMalloc(sizeof(char*));
-				*(void**)*arg = utilMalloc(sizeof(char)*(len+1));
+				*arg = memMalloc(sizeof(char*));
+				*(void**)*arg = memMalloc(sizeof(char)*(len+1));
 				memcpy(*(char**)*arg, cmd, len); (*(char**)*arg)[len] = '\0';
 				cmd += len;
 				if (quoted && (*(cmd++) != delim)) err=true;
@@ -427,13 +426,13 @@ struct utilStrList *cpComplete(char *prefix) {
 					if (ret) {
 						for (struct utilStrList *r = ret; r; r = r->next) {
 							int len = strlen(r->str);
-							utilStrRealloc(&r->str, NULL, len+2);
+							memStrRealloc(&r->str, NULL, len+2);
 							r->str[len++] = delim;
 							r->str[len]   = '\0';
 						}
 					} else {
 						utilStrListAddAfter(&ret);
-						utilStrRealloc(&ret->str, NULL, 2);
+						memStrRealloc(&ret->str, NULL, 2);
 						ret->str[0] = delim;
 						ret->str[1] = '\0';
 					}
@@ -487,7 +486,7 @@ void consoleTranslUserRmAll() {
 struct utilStrList *cpPathComplete(char *prefix) {
 	char *path=utilExpandPath(prefix);
 	static char *tmp=0;
-	utilStrRealloc(&tmp, 0, strlen(path)+1);
+	memStrRealloc(&tmp, 0, strlen(path)+1);
 	prefix=tmp;
 	if (prefix!=path) {
 		strcpy(prefix, path);
@@ -514,7 +513,7 @@ struct utilStrList *cpPathComplete(char *prefix) {
 	while ((file=readdir(dir))) {
 		if ((strncmp(prefix, file->d_name, prefixLen)==0) && (*prefix || (*file->d_name!='.'))) {
 			utilStrListAddAfter(&list);
-			utilStrRealloc(&list->str, 0, strlen(file->d_name)-prefixLen+1);
+			memStrRealloc(&list->str, 0, strlen(file->d_name)-prefixLen+1);
 			strcpy(list->str, file->d_name+prefixLen);
 		}
 	}
@@ -556,11 +555,11 @@ struct utilStrList *consoleTranslColorComplete(char *prefix, bool withAlphaChann
 	if (codeLen>=0) {
 		if (withAlphaChannel && (codeLen<=9)) {
 			utilStrListAddAfter(&list);
-			utilStrRealloc(&list->str, 0, 10);
+			memStrRealloc(&list->str, 0, 10);
 			strcpy(list->str, "#AARRGGBB"+codeLen);
 		} else if (codeLen<=7) {
 			utilStrListAddAfter(&list);
-			utilStrRealloc(&list->str, 0, 8);
+			memStrRealloc(&list->str, 0, 8);
 			list->str[0]='\0';
 			strcpy(list->str, "#RRGGBB"+codeLen);
 		}

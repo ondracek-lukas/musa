@@ -8,7 +8,7 @@
 #include <complex.h>
 #include <math.h>
 #include <float.h>
-#include "util.h"
+#include "mem.h"
 
 #include "fft.h"
 
@@ -42,22 +42,24 @@ struct fftSpectrumContext {
 	size_t blockLen, blockLenLog2;
 	struct cache *cache;
 	double complex *omega;
+	struct memPerThread *vector;
 };
 
 
 struct fftSpectrumContext *fftCreateSpectrumContext(size_t newBlockLenLog2) {
-	struct fftSpectrumContext *context = utilMalloc(sizeof(struct fftSpectrumContext));
+	struct fftSpectrumContext *context = memMalloc(sizeof(struct fftSpectrumContext));
 	context->blockLenLog2 = newBlockLenLog2;
 	context->blockLen = 1<<newBlockLenLog2;
-	context->cache=utilMalloc(sizeof(struct cache)*context->blockLen);
+	context->cache=memMalloc(sizeof(struct cache)*context->blockLen);
 	for (size_t i=0; i<context->blockLen; i++) {
 		size_t j=reverseLowerBits(i,context->blockLenLog2);
 		context->cache[i].reversedIndex=j;
 		context->cache[i].windowValue=fftWindow(j,context->blockLen);
 	}
-	context->omega=utilMalloc(sizeof(double complex)*context->blockLenLog2);
+	context->omega=memMalloc(sizeof(double complex)*context->blockLenLog2);
 	for (size_t i=0, k=1; i<context->blockLenLog2; i++, k*=2)
 		context->omega[i]=cexp(I*M_PI/k);
+	context->vector = memPerThreadMalloc(sizeof(float complex) * context->blockLen);
 	return context;
 }
 
@@ -65,6 +67,7 @@ void fftDestroySpectrumContext(struct fftSpectrumContext *context) {
 	if (!context) return;
 	free(context->cache);
 	free(context->omega);
+	memPerThreadFree(context->vector);
 	free(context);
 }
 
@@ -74,8 +77,8 @@ void fftSpectrum(float *buffer, struct fftSpectrumContext *context) {
 	size_t blockLen = context->blockLen;
 	struct cache *cache = context->cache;
 	double complex *omega = context->omega;
+	float complex *vector = memPerThreadGet(context->vector);
 
-	float complex *vector = utilMalloc(sizeof(float complex)*blockLen); // TODO make it part of the reentrant data
 
 	size_t i,j,k=0;
 	double complex om, x, a, b;
@@ -137,7 +140,6 @@ void fftSpectrum(float *buffer, struct fftSpectrumContext *context) {
 		buffer[i]=cabs(vector[i])/blockLen;
 	buffer = NULL;
 
-	free(vector);
 }
 
 
@@ -235,29 +237,32 @@ struct fftFilterContext {
 	size_t blockLen;
 	double complex *omega, *omegaR;
 	complex float *responseSpectrum;
+	struct memPerThread *vector;
 };
 
 struct fftFilterContext *fftCreateFilterContext(float *impulseResponse, int impulseResponseLen, int fftBlockLenLog2) {
 
-	struct fftFilterContext *context = utilMalloc(sizeof(struct fftFilterContext));
+	struct fftFilterContext *context = memMalloc(sizeof(struct fftFilterContext));
 
 	context -> blockLen = (1<<fftBlockLenLog2);
 
-	context->omega=utilMalloc(sizeof(double complex)*fftBlockLenLog2);
+	context->omega=memMalloc(sizeof(double complex)*fftBlockLenLog2);
 	for (size_t i=0, k=1; i<fftBlockLenLog2; i++, k*=2)
 		context->omega[i]=cexp(I*M_PI/k);
 
-	context->omegaR=utilMalloc(sizeof(double complex)*fftBlockLenLog2);
+	context->omegaR=memMalloc(sizeof(double complex)*fftBlockLenLog2);
 	for (size_t i=0, k=1; i<fftBlockLenLog2; i++, k*=2)
 		context->omegaR[i]=cexp(-I*M_PI/k);
 
-	context -> responseSpectrum = utilCalloc(context->blockLen, sizeof(complex float));
+	context -> responseSpectrum = memCalloc(context->blockLen, sizeof(complex float));
 
 
 	for (int i = 0; i < impulseResponseLen; i++) {
 		context->responseSpectrum[i] = impulseResponse[i];
 	}
 	fftNoShuffle(context->responseSpectrum, context->blockLen, context->omega);
+
+	context->vector = memPerThreadMalloc(sizeof(float complex) * context->blockLen);
 
 	return context;
 }
@@ -266,12 +271,13 @@ void fftDestroyFilterContext(struct fftFilterContext *context) {
 		free(context->omega);
 		free(context->omegaR);
 		free(context->responseSpectrum);
+		memPerThreadFree(context->vector);
 		free(context);
 	}
 }
 void fftFilter(float *buffer, struct fftFilterContext *context) {
 	int blockLen = context->blockLen;
-	complex float *vector = utilMalloc(sizeof(float complex)*blockLen); // TODO make it part of the reentrant data
+	complex float *vector = memPerThreadGet(context->vector);
 	for (int i = 0; i<blockLen; i++) {
 		vector[i] = buffer[i];
 	}

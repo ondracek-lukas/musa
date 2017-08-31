@@ -1,6 +1,7 @@
 // MusA               Copyright (C) 2016--2017  Lukáš Ondráček <ondracek.lukas@gmail.com>, see README file
 
 #include "util.h"
+#include "mem.h"
 #include <string.h>
 #include <stdarg.h>
 #include "taskManager.h"
@@ -15,7 +16,7 @@ static char *status  = NULL;
 static int statusLen;
 
 static __attribute__((constructor)) void init() {
-	utilStrRealloc(&status, 0, 1);
+	memStrRealloc(&status, 0, 1);
 	status[0]='\0';
 }
 static __attribute__((format(printf,1,2))) void append(const char *fmt, ...) {
@@ -23,7 +24,7 @@ static __attribute__((format(printf,1,2))) void append(const char *fmt, ...) {
 	va_start(args, fmt);
 	int len = vsnprintf(NULL, 0, fmt, args);
 	va_end(args);
-	utilStrRealloc(&status, 0, statusLen+len+1);
+	memStrRealloc(&status, 0, statusLen+len+1);
 	va_start(args, fmt);
 	statusLen += vsnprintf(status+statusLen, len+1, fmt, args);
 	va_end(args);

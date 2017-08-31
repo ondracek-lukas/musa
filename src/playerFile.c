@@ -14,6 +14,7 @@
 #include "taskManager.h"
 #include "consoleOut.h"
 #include "util.h"
+#include "mem.h"
 
 #define MIN_AFTER_POS  (PLAYER_BUFFER_SIZE/2)
 #define MAX_AFTER_POS  (PLAYER_BUFFER_SIZE*3/4)
@@ -100,7 +101,7 @@ static int64_t myIOSeek(void *data, int64_t pos, int whence) {
 	}
 }
 bool playerDataOpen(char *filename, const char *data, size_t size) {
-	struct myIOContext *context = utilMalloc(sizeof(struct myIOContext));
+	struct myIOContext *context = memMalloc(sizeof(struct myIOContext));
 	context->data = data;
 	context->size = size;
 	context->pos  = 0;

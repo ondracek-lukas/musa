@@ -12,6 +12,7 @@
 #include <stdbool.h>
 
 #include "util.h"
+#include "mem.h"
 #include "messages.h"
 
 int consoleStrWidth(char *str) {
@@ -71,7 +72,7 @@ void consolePrintBlock(char *str) {
 	for (struct utilStrList *line=lines; line; line=line->next) {
 		int i=strlen(line->str);
 		int newLen=consoleBlockWidth-consoleStrWidth(line->str)+i;
-		utilStrRealloc(&line->str, 0, newLen+1);
+		memStrRealloc(&line->str, 0, newLen+1);
 		for (; i<newLen; i++)
 			line->str[i]=' ';
 		line->str[i]='\0';
@@ -138,7 +139,7 @@ void consolePrintLinesList(struct utilStrList *lines) {
 			lines2=lines2->prev;
 		}
 
-		utilStrRealloc(&lines2->str, 0, strlen(lines2->str)+2);
+		memStrRealloc(&lines2->str, 0, strlen(lines2->str)+2);
 		utilStrInsertChar(lines2->str, consoleSpecialColorNormal);
 		//drawerInvokeRedisplay();
 	}
@@ -147,7 +148,7 @@ void consolePrintLinesList(struct utilStrList *lines) {
 void consolePrintErr(char *str) {
 	printf("%s\n", str);
 	static char *str2=0;
-	utilStrRealloc(&str2, 0, strlen(str)+2);
+	memStrRealloc(&str2, 0, strlen(str)+2);
 	*str2=consoleSpecialColorRed;
 	strcpy(str2+1, str);
 	consolePrint(str2);

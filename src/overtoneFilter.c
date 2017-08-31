@@ -2,7 +2,7 @@
 
 #include "messages.h"
 #include "drawerScale.h"
-#include "util.h"
+#include "mem.h"
 #include <math.h>
 
 
@@ -10,13 +10,21 @@ void ofProcess(float *data) { // TODO: optimize
 	static __thread float *harmOrig=NULL, *harmOrigB=NULL, *harmRelated=NULL, *overtoneCache=NULL;
 
 	if (harmOrig == NULL) {
-		harmOrig      = utilMalloc(sizeof(float) * (DS_OVERTONES_CNT+2));
-		harmOrigB     = utilMalloc(sizeof(float) * (DS_OVERTONES_CNT+2));
-		harmRelated   = utilMalloc(sizeof(float) * (DS_OVERTONES_CNT+2));
-		overtoneCache = utilMalloc(sizeof(float) * DS_OVERTONES_CNT);
+		harmOrig      = memMalloc(sizeof(float) * (DS_OVERTONES_CNT+2));
+		harmOrigB     = memMalloc(sizeof(float) * (DS_OVERTONES_CNT+2));
+		harmRelated   = memMalloc(sizeof(float) * (DS_OVERTONES_CNT+2));
+		overtoneCache = memMalloc(sizeof(float) * DS_OVERTONES_CNT);
 	}
 
-	float *dataB = utilMalloc(msgOption_columnLen * sizeof(float));
+	static float *dataB = NULL;
+	{
+		static float dataBLen = 0;
+		if (dataBLen != msgOption_columnLen) {
+			free(dataB);
+			dataBLen = msgOption_columnLen;
+			dataB = memMalloc(dataBLen * sizeof(float));
+		}
+	}
 
 	for (int i = 0; i < msgOption_columnLen; i++) {
 		dataB[i] = data[i];
@@ -140,5 +148,4 @@ void ofProcess(float *data) { // TODO: optimize
 		}
 	}
 
-	free(dataB);
 }

@@ -5,7 +5,7 @@
 #include "messages.h"
 #include "streamBuffer.h"
 #include "player.h"
-#include "util.h"
+#include "mem.h"
 #include "taskManager.h"
 #include "fft.h"
 #include "drawer.h"
@@ -41,9 +41,9 @@ void rsReset(bool hard) {
 	for (int i = newCnt; i < rsCnt; i++) {
 		free(rsBuffers[i]);
 	}
-	rsBuffers  = utilRealloc(rsBuffers,  newCnt*sizeof(struct streamBuffer *));
-	rsRates    = utilRealloc(rsRates,    newCnt*sizeof(double));
-	writeLocks = utilRealloc(writeLocks, newCnt*sizeof(int));
+	rsBuffers  = memRealloc(rsBuffers,  newCnt*sizeof(struct streamBuffer *));
+	rsRates    = memRealloc(rsRates,    newCnt*sizeof(double));
+	writeLocks = memRealloc(writeLocks, newCnt*sizeof(int));
 	
 	if (rsCnt == 0) {
 		rsBuffers[0] = &playerBuffer;
@@ -51,7 +51,7 @@ void rsReset(bool hard) {
 		rsCnt = 1;
 	}
 	for (int i = rsCnt; i < newCnt; i++) {
-		rsBuffers[i] = utilMalloc(sizeof(struct streamBuffer));
+		rsBuffers[i] = memMalloc(sizeof(struct streamBuffer));
 	}
 	for (int i = (hard ? 1 : rsCnt); i < newCnt; i++) {
 		int streamBegin = rsBuffers[i-1]->streamBegin;

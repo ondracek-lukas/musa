@@ -19,6 +19,7 @@
 #include "consoleStatus.h"
 
 #include "util.h"
+#include "mem.h"
 #include "taskManager.h"
 #include "messages.h"
 #include "resources.gen.h"
@@ -112,7 +113,7 @@ void drawerReset() {
 	if (newColumnsCnt != columnsCnt) {
 		columnsCnt = newColumnsCnt;
 		free(drawnColumns);
-		drawnColumns = utilMalloc(sizeof(bool) * columnsCnt);
+		drawnColumns = memMalloc(sizeof(bool) * columnsCnt);
 	}
 	cursorDrawn = false;
 	repaintInterrupted = false;
@@ -138,7 +139,7 @@ void drawerReset() {
 				if (*strI == 'V'-'@') versionCnt++;
 			}
 			char *newIntroStr = introStr;
-			utilStrRealloc(&newIntroStr, NULL,
+			memStrRealloc(&newIntroStr, NULL,
 					sizeof(resources_intro_txt) + versionCnt * sizeof(resources_VERSION));
 			char *str = newIntroStr;
 			for (const char *strI = resources_intro_txt; *strI; strI++) {

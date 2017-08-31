@@ -7,6 +7,7 @@
 #include "commandParser.h"
 #include "messages.h"
 #include "util.h"
+#include "mem.h"
 
 static struct utilStrList *historyFirst;
 static struct utilStrList *historyLast;
@@ -35,7 +36,7 @@ void consoleSetHistoryMaxCount(int maxCount) {
 	for (; historyCount>historyMaxCount; historyCount--)
 		if (historyCount>1) {
 			historyFirst=historyFirst->next;
-			utilStrRealloc(&historyFirst->prev->str, 0, 0);
+			memStrRealloc(&historyFirst->prev->str, 0, 0);
 			free(historyFirst->prev);
 			historyFirst->prev=0;
 		} else {
@@ -69,7 +70,7 @@ static char cursor[]={
 static char cursorLen=sizeof(cursor)-1;
 
 static void cmdLineRealloc(int newChars) {
-	utilStrRealloc(&consoleInputLine, 0, (cmdEnd>completionEnd?cmdEnd:completionEnd)+newChars+1);
+	memStrRealloc(&consoleInputLine, 0, (cmdEnd>completionEnd?cmdEnd:completionEnd)+newChars+1);
 }
 
 static void setCursorPos(int pos) {
@@ -212,7 +213,7 @@ void consoleEnter() {
 		utilStrListAddAfter(&historyLast);
 		if (!historyFirst)
 			historyFirst=historyLast;
-		utilStrRealloc(&historyLast->str, 0, cmdEnd+1);
+		memStrRealloc(&historyLast->str, 0, cmdEnd+1);
 		strncpy(historyLast->str, consoleInputLine, cmdEnd);
 		historyLast->str[cmdEnd]='\0';
 	}
@@ -223,7 +224,7 @@ void consoleEnter() {
 	if (!cpExecute(cmd+cmdBegin)) {; // skip :
 		msgSend_printErr("Wrong command");
 	}
-	utilStrRealloc(&cmd, 0, 0);
+	memStrRealloc(&cmd, 0, 0);
 	//drawerInvokeRedisplay();
 }
 

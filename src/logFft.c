@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include "fft.h"
 #include "logFft.h"
-#include "util.h"
+#include "mem.h"
 #include "resampler.h"
 
 
@@ -38,14 +38,21 @@ extern void logFftReset(
 #define columnBlock(i,j) (fftBlocks[(i)*blockLen + (j)])
 
 bool logFftProcess(double posSec, int blocksCnt, float *outputBuffer) {
-	float *fftBlocks;
+	static __thread float *fftBlocks     = NULL;
+	static __thread size_t fftBlocksSize = 0;
 	float *result;
 
-	fftBlocks = utilMalloc(blockLen * blocksCnt * sizeof(float));
+	{
+		size_t size = blockLen * blocksCnt * sizeof(float);
+		if (fftBlocksSize < size) {
+			free(fftBlocks);
+			fftBlocks = memMalloc(size);
+			fftBlocksSize = size;
+		}
+	}
 
 	for (int i = 0; i < blocksCnt; i++) {
 		if (!rsRead(i, posSec, blockLen/2, &columnBlock(i,0))) {
-			free(fftBlocks);
 			return false;
 		}
 	}
@@ -82,7 +89,6 @@ bool logFftProcess(double posSec, int blocksCnt, float *outputBuffer) {
 		}
 		freq *= freqMultPerItem;
 	}
-	free(fftBlocks);
 
 	return true;
 }

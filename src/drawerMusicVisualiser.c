@@ -9,7 +9,7 @@
 #include "drawerScale.h"
 #include "drawerBuffer.h"
 #include "player.h"
-#include "util.h"
+#include "mem.h"
 #include "taskManager.h"
 #include "messages.h"
 #include "resampler.h"
@@ -216,7 +216,7 @@ static bool taskFunc() {
 		if (bufferSize != dbuffer.columnLen) {
 			free(buffer);
 			bufferSize = dbuffer.columnLen;
-			buffer = utilMalloc(bufferSize * sizeof(float));
+			buffer = memMalloc(bufferSize * sizeof(float));
 		}
 	}
 

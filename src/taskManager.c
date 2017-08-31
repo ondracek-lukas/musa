@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #include "taskManager.h"
 #include "util.h"
+#include "mem.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <pthread.h>
@@ -105,7 +106,7 @@ static __attribute__((constructor)) void init() {
 	param.sched_priority=0;
 
 	workersCnt=sysconf(_SC_NPROCESSORS_ONLN);
-	workers=utilMalloc(sizeof(struct workerInfo)*workersCnt);
+	workers=memMalloc(sizeof(struct workerInfo)*workersCnt);
 	for (size_t i=0; i<workersCnt; i++) {
 		workers[i].id=i;
 		workers[i].sleeping=false;

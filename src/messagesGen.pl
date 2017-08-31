@@ -241,7 +241,7 @@ sub assign {  # (type, lvalue, rvalue)
 	openBlock;
 	my ($type, $lvalue, $rvalue) = @_;
 	if ($cTypes{$type} eq  "char *") {
-		say "${lp}utilStrRealloc(&$lvalue, NULL, strlen($rvalue)+1);";
+		say "${lp}memStrRealloc(&$lvalue, NULL, strlen($rvalue)+1);";
 		say "${lp}strcpy($lvalue, $rvalue);";
 	} else {
 		say "${lp}$lvalue = $rvalue;";

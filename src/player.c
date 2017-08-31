@@ -12,6 +12,7 @@
 #include "taskManager.h"
 #include "consoleOut.h"
 #include "util.h"
+#include "mem.h"
 #include "resources.gen.h"
 
 enum playerSourceType playerSourceType = PLAYER_SOURCE_NONE;
@@ -37,7 +38,7 @@ void playerOpenDevice(double sampleRate) {
 		return;
 	}
 
-	char *source = utilMalloc(sizeof(char) * 13);
+	char *source = memMalloc(sizeof(char) * 13);
 	strcpy(source, "input device");
 	playerSource = source;
 	playerSourceType = PLAYER_SOURCE_DEVICE;
@@ -59,7 +60,7 @@ void playerOpen(char *filename) {
 		return;
 	}
 
-	char *source = utilMalloc(sizeof(char) * strlen(filename));
+	char *source = memMalloc(sizeof(char) * strlen(filename));
 	strcpy(source, filename);
 	playerSource = source;
 	playerSourceType = PLAYER_SOURCE_FILE;

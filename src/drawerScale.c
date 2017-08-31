@@ -5,7 +5,7 @@
 #include "messages.h"
 #include "drawerScale.h"
 #include "drawerBuffer.h"
-#include "util.h"
+#include "mem.h"
 
 double dsColumnToPlayerPosMultiplier=1;
 
@@ -126,7 +126,7 @@ static void calcScaleLabels() {
 	scalePosToInputIndexMultiplier=scaleMinFreq/(scaleMaxFreq-scaleMinFreq)*(inputColumnLenToDraw-1);
 
 	free(scalePosToInputIndexCache);
-	scalePosToInputIndexCache=utilMalloc(sizeof(double)*height);
+	scalePosToInputIndexCache=memMalloc(sizeof(double)*height);
 	for (size_t i=0; i<height; i++)
 		scalePosToInputIndexCache[i]=scalePosToInputIndexUncached(i);
 
@@ -142,7 +142,7 @@ static void calcScaleLabels() {
 		keyboardMinTone=((tone-4)%12+12)%12;
 		free(scaleLabels);
 		scaleLabelsCnt=(size_t)ceil(log(scaleMaxFreq/freq)/log(multiplier));
-		scaleLabels=utilMalloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
+		scaleLabels=memMalloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
 		for (size_t i=0; i<scaleLabelsCnt; freq*=multiplier, i++, tone++) {
 			scaleLabels[i].pos=(size_t)(scaleFreqToPos(freq)+0.5);
 			if ((height-scaleLabels[i].pos>SCALE_LABELS_FONT_HEIGHT) &&
@@ -164,7 +164,7 @@ static void calcScaleLabels() {
 		for (; freq<scaleMinFreq; freq*=multiplier);
 		free(scaleLabels);
 		scaleLabelsCnt=(size_t)ceil(log(scaleMaxFreq/freq)/log(multiplier));
-		scaleLabels=utilMalloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
+		scaleLabels=memMalloc(sizeof(struct scaleLabels)*scaleLabelsCnt);
 		for (size_t i=0; i<scaleLabelsCnt; freq*=multiplier, i++) {
 			scaleLabels[i].pos=(size_t)(scaleFreqToPos(freq)+0.5);
 			if (height-scaleLabels[i].pos>SCALE_LABELS_FONT_HEIGHT)

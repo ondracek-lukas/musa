@@ -3,6 +3,7 @@
 
 
 #include "util.h"
+#include "mem.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -14,28 +15,6 @@
 #include <math.h>
 #include <stdbool.h>
 
-
-
-void *utilMalloc(size_t size) {
-	void *mem = malloc(size);
-	if (size && !mem) {
-		utilExitErr("Out of memory (%llu B needed)", size);
-	}
-	return mem;
-}
-
-void *utilCalloc(size_t nmemb, size_t size) {
-	void *mem=calloc(nmemb, size);
-	if (size && nmemb && !mem)
-		utilExitErr("Out of memory");
-	return mem;
-};
-void *utilRealloc(void *ptr, size_t size) {
-	void *mem=realloc(ptr, size);
-	if (size && !mem)
-		utilExitErr("Out of memory");
-	return mem;
-};
 
 
 
@@ -76,7 +55,7 @@ char *utilExpandPath(char *ipath) { // returned path is valid till next call (if
 	length=prefixLength+strlen(ipath);
 	if (opathSize<length) {
 		opathSize=length;
-		opath=utilRealloc(opath, opathSize*sizeof(char));
+		opath=memRealloc(opath, opathSize*sizeof(char));
 	}
 	strncpy(opath, prefix, prefixLength);
 #ifdef WIN32
@@ -95,7 +74,7 @@ char *utilExecutablePath() {
 
 	if (!path) {
 		do {
-			path=utilRealloc(path, sizeof(char)*(size*=2));
+			path=memRealloc(path, sizeof(char)*(size*=2));
 #ifdef WIN32
 			length=GetModuleFileName(0, path, size);
 #else
@@ -130,61 +109,6 @@ char *utilFileNameFromPath(char *path) {
 }
 
 
-// -- string alloc --
-
-static char *strReallocPtrOld=0;
-static char *strReallocPtrNew=0;
-void utilStrRealloc(char **ptr, char **ptr2, size_t minSize) {
-	// *ptr is pointer to the block
-	// *ptr2 is another pointer in the block or ptr2==0
-	// minSize is required size from *ptr2 or *ptr if not set
-	static struct blocks {
-		char *ptr;
-		size_t size;
-		struct blocks *next;
-	} *blocks=0;
-	struct blocks *block, **pBlock;
-
-	strReallocPtrOld=*ptr;
-	if (!*ptr) {
-		block=utilMalloc(sizeof(struct blocks));
-		block->size=minSize;
-		block->ptr=*ptr=utilMalloc(minSize*sizeof(char));
-		block->next=blocks;
-		blocks=block;
-	} else {
-		for (pBlock=&blocks; *pBlock; pBlock=&(*pBlock)->next)
-			if ((*pBlock)->ptr == *ptr)
-				break;
-		if (!(block=*pBlock))
-			utilExitErr("String manipulation error");
-		if (ptr2)
-			minSize+=*ptr2-*ptr;
-		if (minSize==0) {
-			free(*ptr);
-			*ptr=0;
-			*pBlock=block->next;
-			free(block);
-		} else if (block->size<minSize) {
-			block->size=16;
-			while (block->size<minSize) {
-				block->size*=2;
-				if (block->size==0)
-					utilExitErr("Too much memory needed");
-			}
-			block->ptr=utilRealloc(block->ptr, block->size*sizeof(char));
-			*ptr=block->ptr;
-		}
-	}
-	strReallocPtrNew=*ptr;
-	if (ptr2)
-		utilStrReallocPtrUpdate(ptr2);
-}
-
-void utilStrReallocPtrUpdate(char **ptr) {
-	*ptr=strReallocPtrNew+(*ptr-strReallocPtrOld);
-}
-
 
 // -- string utils --
 
@@ -215,7 +139,7 @@ void utilStrRmChars(char *str, int cnt) {
 // -- string list --
 
 void utilStrListAddAfter(struct utilStrList **pAfter) {
-	struct utilStrList *new=utilMalloc(sizeof(struct utilStrList));
+	struct utilStrList *new=memMalloc(sizeof(struct utilStrList));
 	new->str=0;
 	new->prev=*pAfter;
 	if (*pAfter)
@@ -232,7 +156,7 @@ void utilStrListAddAfter(struct utilStrList **pAfter) {
 void utilStrListCopyAfter(struct utilStrList **pAfter, struct utilStrList *list) {
 	while (list) {
 		utilStrListAddAfter(pAfter);
-		utilStrRealloc(&(*pAfter)->str, 0, strlen(list->str)+1);
+		memStrRealloc(&(*pAfter)->str, 0, strlen(list->str)+1);
 		strcpy((*pAfter)->str, list->str);
 		list=list->next;
 	}
@@ -265,7 +189,7 @@ struct utilStrList *utilStrListOfLines(char *str) {
 		utilStrListAddAfter(&lines);
 		while (*lineEnd && (*lineEnd!='\n'))
 			lineEnd++;
-		utilStrRealloc(&lines->str, 0, lineEnd-str+1);
+		memStrRealloc(&lines->str, 0, lineEnd-str+1);
 		str2=lines->str;
 		while (str!=lineEnd)
 			*str2++ = *str++;
@@ -287,7 +211,7 @@ void utilStrListRm(struct utilStrList **pList) {
 		*pList=node->next;
 	else
 		*pList=node->prev;
-	utilStrRealloc(&node->str, 0, 0);
+	memStrRealloc(&node->str, 0, 0);
 	free(node);
 }
 

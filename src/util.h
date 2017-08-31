@@ -7,11 +7,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-
-void *utilMalloc(size_t size);
-void *utilCalloc(size_t nmemb, size_t size);
-void *utilRealloc(void *ptr, size_t size);
-
 #define utilExitErr(format,...) { \
 	fprintf(stderr, "Error occurred: " format "\n", ##__VA_ARGS__); \
 	abort(); \
@@ -28,17 +23,6 @@ extern char *utilExecutablePath();
 
 // Returns pointer to a filename in the given path
 char *utilFileNameFromPath(char *path);
-
-
-// Reallocs ptr the way that from ptr2 (another pointer in ptr block) is minSize bytes available
-// *ptr is pointer to the block
-// *ptr2 is another pointer in the block or ptr2==0
-// minSize is required size from *ptr2 or *ptr if not set
-// both ptr and ptr2 can be changed
-extern void utilStrRealloc(char **ptr, char **ptr2, size_t minSize);
-
-// Updates poiner ptr in last realloced block after last calling of utilStrRealloc
-extern void utilStrReallocPtrUpdate(char **ptr);
 
 
 // Inserts given character before given null terminated string

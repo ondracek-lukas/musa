@@ -8,6 +8,7 @@
 #include <string.h>
 #include <math.h>
 #include "util.h"
+#include "mem.h"
 #include <unistd.h>
 
 #include "player.h"
@@ -82,7 +83,7 @@ int main(int argc, char **argv){
 			if (*strH == 'V'-'@') versionCnt++;
 		}
 		char *str = NULL;
-		utilStrRealloc(&str, NULL,
+		memStrRealloc(&str, NULL,
 				sizeof(resources_help_txt) + versionCnt * sizeof(resources_VERSION));
 		char *str2 = str;
 		for (const char *strH = resources_help_txt; *strH; strH++) {

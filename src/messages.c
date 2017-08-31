@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 #include "util.h"
+#include "mem.h"
 #include "taskManager.h"
 
 struct msgType {
@@ -31,7 +32,7 @@ static void __attribute__((constructor)) init() {
 
 void msgSend(struct msgType *type, void **args) {
 	void *packedArgs = msgPackArgs(type->argTypes, args);
-	struct msgStack *item = utilMalloc(sizeof(struct msgStack));
+	struct msgStack *item = memMalloc(sizeof(struct msgStack));
 	item->type = type;
 	item->packedData = packedArgs;
 	for (struct taskInfo **task = type->pauseTasks; *task; task++) {
@@ -95,7 +96,7 @@ void *msgPackArgs(enum msgDataType *types, void **argsArr) {
 			default: utilExitErr("Unknown data type to be packed.");
 		}
 	}
-	char *packed = utilMalloc(size);
+	char *packed = memMalloc(size);
 	char *p = packed;
 	arg = argsArr;
 	for (enum msgDataType *t = types; *t; t++, arg++) {
