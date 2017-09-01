@@ -58,7 +58,7 @@ struct taskInfo {
 	int running;     // read-only
 	int paused;      // read-only
 };
-#define TM_TASK_INITIALIZER(active,serial) ((struct taskInfo){(active), (serial), 0, 0})
+#define TM_TASK_INITIALIZER(active,serial) {(active), (serial), 0, 0}
 
 
 

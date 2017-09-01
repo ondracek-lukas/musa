@@ -4,14 +4,14 @@ CFLAGS=-pthread -std=gnu99 -g
 LDFLAGS=-lGL -lglut -lm -lavcodec -lavformat -lavutil -lswresample -lportaudio
 
 musa: obj/main.o obj/util.o obj/drawer.o obj/player.o obj/playerFile.o obj/playerDevice.o obj/drawerBuffer.o obj/drawerMusicVisualiser.o obj/drawerScale.o obj/logFft.o obj/fft.o obj/taskManager.o obj/consoleIn.o obj/consoleOut.o obj/consoleStatus.o obj/hid.o obj/commandParser.o obj/messages.o obj/streamBuffer.o obj/resampler.o obj/overtoneFilter.o obj/resources.gen.o obj/mem.o
-	gcc -o $@ $^ $(CFLAGS) $(LDFLAGS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
 run: musa
 	./musa
 
 obj/%.o: src/%.c src/%.h
 	mkdir obj -p
-	gcc -c $< -o $@ $(CFLAGS)
+	$(CC) -c $< -o $@ $(CFLAGS)
 
 messages=src/messagesList.gen.h src/messages.h
 
