@@ -158,7 +158,6 @@ static void fftNoShuffle(complex float *vector, size_t blockLen, double complex 
 			om=omega[maskI]; \
 			x=1; \
 			for (i=k, j=k+(mask); i<k+(mask); i++, j++) { \
-				if (i>blockLen) {printf("AAA: %d %d %d\n", i, j, k); exit(42); } \
 				a=vector[i]; \
 				b=vector[j]; \
 				vector[i]=(a+b); \
@@ -235,6 +234,7 @@ static void fftNoShuffleR(complex float *vector, size_t blockLen, double complex
 
 struct fftFilterContext {
 	size_t blockLen;
+	size_t impulseResponseLen;
 	double complex *omega, *omegaR;
 	complex float *responseSpectrum;
 	struct memPerThread *vector;
@@ -245,6 +245,7 @@ struct fftFilterContext *fftCreateFilterContext(float *impulseResponse, int impu
 	struct fftFilterContext *context = memMalloc(sizeof(struct fftFilterContext));
 
 	context -> blockLen = (1<<fftBlockLenLog2);
+	context -> impulseResponseLen = impulseResponseLen;
 
 	context->omega=memMalloc(sizeof(double complex)*fftBlockLenLog2);
 	for (size_t i=0, k=1; i<fftBlockLenLog2; i++, k*=2)
@@ -287,7 +288,7 @@ void fftFilter(float *buffer, struct fftFilterContext *context) {
 	}
 	fftNoShuffleR(vector, context->blockLen, context->omegaR);
 
-	for (int i = 0; i<blockLen; i++) {
-		buffer[i] = vector[i];
+	for (int i = context->impulseResponseLen-1, j=0; i<blockLen; i++, j++) {
+		buffer[j] = vector[i];
 	}
 }

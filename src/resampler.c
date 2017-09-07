@@ -75,7 +75,7 @@ void rsReset(bool hard) {
 	float ir[IMPULSE_RESPONSE_LEN];
 	ir[IMPULSE_RESPONSE_LEN/2] = 1.0/2;  // assert: IMPULSE_RESPONSE_LEN is odd
 	for (int i = 1; i <= IMPULSE_RESPONSE_LEN/2; i++) {
-		ir[IMPULSE_RESPONSE_LEN/2 - i] = ir[IMPULSE_RESPONSE_LEN/2 + i] = sin(M_PI_2*i)/(M_PI_2*i)/2;
+		ir[IMPULSE_RESPONSE_LEN/2 - i] = ir[IMPULSE_RESPONSE_LEN/2 + i] = sin(M_PI_2*i)/(M_PI_2*i)/2 * cos(M_PI*i/IMPULSE_RESPONSE_LEN);
 	}
 	
 	filterContext = fftCreateFilterContext(ir, IMPULSE_RESPONSE_LEN, FFT_BLOCK_LEN_LOG2);
@@ -131,7 +131,7 @@ static inline bool tryProcess(int i, bool forward) {
 		sbPrePrepend(rsBuffers[i], begin);
 	}
 	
-	for (int j = begin, j2=IMPULSE_RESPONSE_LEN/2; j < end; j++, j2+=2) {
+	for (int j = begin, j2=0; j < end; j++, j2+=2) {
 		sbValue(rsBuffers[i], j) = buffer[j2];
 	}
 	
