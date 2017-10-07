@@ -45,10 +45,12 @@ void rsReset(bool hard) {
 	rsRates    = memRealloc(rsRates,    newCnt*sizeof(double));
 	writeLocks = memRealloc(writeLocks, newCnt*sizeof(int));
 	
-	if (rsCnt == 0) {
+	if ((rsCnt == 0) || hard) {
 		rsBuffers[0] = &playerBuffer;
 		rsRates[0]   = playerSampleRate;
-		rsCnt = 1;
+		if (rsCnt == 0) {
+			rsCnt = 1;
+		}
 	}
 	for (int i = rsCnt; i < newCnt; i++) {
 		rsBuffers[i] = memMalloc(sizeof(struct streamBuffer));
