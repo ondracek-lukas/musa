@@ -65,7 +65,7 @@ Additional compile-time dependencies: Perl5, GNU make.
 
 To compile the application on Linux just use 'make' command
 after satisfying the dependencies.
-Compiling the application for Windows was not tested yet.
+To cross-compile it on Linux for Windows use 'make arch=win32'.
 
 
 Command-line arguments

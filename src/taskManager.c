@@ -7,8 +7,13 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include <unistd.h>
 #include <errno.h>
+#include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #ifdef TM_LOG
 #define LOG printf
@@ -43,7 +48,7 @@ static struct workerInfo {
 #ifdef TM_PROFILER
 
 #define profGetTS(ts) \
-	clock_gettime(CLOCK_MONOTONIC_RAW, &ts)
+	clock_gettime(CLOCK_MONOTONIC, &ts)
 #define profAddDiff(val,tsNew,tsOld) { \
 	time_t sec = tsNew.tv_sec -tsOld.tv_sec; \
 	long  nsec = tsNew.tv_nsec-tsOld.tv_nsec; \
@@ -105,13 +110,24 @@ static __attribute__((constructor)) void init() {
 	struct sched_param param;
 	param.sched_priority=0;
 
+#ifdef _WIN32
+	{
+		SYSTEM_INFO sysinfo;
+		GetSystemInfo(&sysinfo);
+		workersCnt = sysinfo.dwNumberOfProcessors;
+	}
+#else
 	workersCnt=sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+
 	workers=memMalloc(sizeof(struct workerInfo)*workersCnt);
 	for (size_t i=0; i<workersCnt; i++) {
 		workers[i].id=i;
 		workers[i].sleeping=false;
 		pthread_create(&workers[i].threadID, NULL, (void*(*)(void*))worker, workers+i);
+#ifndef _WIN32
 		pthread_setschedparam(workers[i].threadID, SCHED_IDLE, &param);
+#endif
 	}
 }
 
