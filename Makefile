@@ -61,4 +61,4 @@ src/messagesList.gen.c: src/messagesList.pl src/messagesGen.pl src/*.h
 	src/messagesGen.pl
 
 clean:
-	rm -rf obj musa src/*.gen.*
+	rm -rf obj musa musa.exe src/*.gen.*

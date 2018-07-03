@@ -41,7 +41,7 @@
 // Following two defines should be commented in release.
 
 // Print statistics on stop/exit.
-#define TM_PROFILER
+// #define TM_PROFILER
 
 // Print debug messages.
 //#define TM_LOG

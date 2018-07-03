@@ -363,6 +363,7 @@ static inline void drawColumnColor(int screenColumn) {
 	glEnd();
 }
 static inline void moveView(int offset, bool force) {
+	glDisable(GL_BLEND);
 	if (!force) {
 		int cnt, from, to;
 		if (offset > 0) {
@@ -393,6 +394,7 @@ static inline void moveView(int offset, bool force) {
 			}
 		}
 	}
+	glEnable(GL_BLEND);
 }
 static inline bool drawColumn(int column) {
 	if (!drawnColumns(column)) {

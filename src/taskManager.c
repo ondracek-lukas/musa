@@ -133,7 +133,14 @@ static __attribute__((constructor)) void init() {
 
 void tmResume() {
 	if (workersRunning < workersCnt) {
+		// Windows hack: POSIX pthread allows broadcasting without mutex, winpthread doesn't
+#ifdef WIN32
+		pthread_mutex_lock(&mutex);
+#endif
 		pthread_cond_broadcast(&cond);
+#ifdef WIN32
+		pthread_mutex_unlock(&mutex);
+#endif
 	}
 }
 
